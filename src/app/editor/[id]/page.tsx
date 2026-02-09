@@ -7,6 +7,10 @@ import { AssetsPanel } from '@/components/AssetsPanel';
 import { EditorPanel } from '@/components/EditorPanel';
 import { PropertiesPanel } from '@/components/PropertiesPanel';
 
+// ... imports
+
+export const runtime = 'edge';
+
 export default function EditorPage() {
   const { id } = useParams();
   const { loadProject, saveProject, template, assets, placeholders } = useStore();

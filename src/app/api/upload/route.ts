@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFile } from 'fs/promises';
-import { join } from 'path';
-import { v4 as uuidv4 } from 'uuid';
+
+export const runtime = process.env.CF_PAGES ? 'edge' : 'nodejs';
 
 export async function POST(request: NextRequest) {
+    if (process.env.CF_PAGES) {
+        return NextResponse.json({ error: 'Upload not supported on Edge' }, { status: 501 });
+    }
+
+    const { writeFile } = await import('fs/promises');
+    const { join } = await import('path');
+    const { v4: uuidv4 } = await import('uuid');
+
     try {
         const formData = await request.formData();
         const file = formData.get('file') as File | null;
@@ -19,6 +26,7 @@ export async function POST(request: NextRequest) {
         const originalName = file.name.replace(/[^a-zA-Z0-9.]/g, '_');
         const filename = `${uuidv4()}_${originalName}`;
         const uploadDir = join(process.cwd(), 'public', 'uploads');
+        // Check if uploadDir exists (it should via Dockerfile/local)
         const filePath = join(uploadDir, filename);
 
         await writeFile(filePath, buffer);

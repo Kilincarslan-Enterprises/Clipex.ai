@@ -1,15 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { join } from 'path';
-import { writeFile } from 'fs/promises';
-import { v4 as uuidv4 } from 'uuid';
-import ffmpeg from 'fluent-ffmpeg';
-import ffmpegStatic from 'ffmpeg-static';
 import { Template, Block, Asset } from '@/types';
 
-// Configure ffmpeg path
-if (ffmpegStatic) {
-    ffmpeg.setFfmpegPath(ffmpegStatic);
-}
+export const runtime = process.env.CF_PAGES ? 'edge' : 'nodejs';
 
 interface RenderRequest {
     template: Template;
@@ -18,6 +10,22 @@ interface RenderRequest {
 }
 
 export async function POST(request: NextRequest) {
+    if (process.env.CF_PAGES) {
+        return NextResponse.json({ error: 'Rendering not supported on Edge' }, { status: 501 });
+    }
+
+    // Dynamic imports to avoid build errors on Edge
+    const { join } = await import('path');
+    const { v4: uuidv4 } = await import('uuid');
+    const ffmpegModule = await import('fluent-ffmpeg');
+    const ffmpeg = ffmpegModule.default;
+    const ffmpegStaticModule = await import('ffmpeg-static');
+    const ffmpegStatic = ffmpegStaticModule.default;
+
+    if (ffmpegStatic) {
+        ffmpeg.setFfmpegPath(ffmpegStatic);
+    }
+
     try {
         const { template, assets, placeholders } = await request.json() as RenderRequest;
 
@@ -45,11 +53,6 @@ export async function POST(request: NextRequest) {
             if (match) {
                 assetId = placeholders[match[1]] || null;
             } else {
-                // direct lookup? or assume source IS the asset ID if not placeholder?
-                // current implementation uses placeholders or direct?
-                // Let's assume simplistic matching for now.
-                // If not placeholder, maybe it's direct path?
-                // But for now we only support inputs via our system
                 return null;
             }
 
@@ -71,12 +74,7 @@ export async function POST(request: NextRequest) {
             if (block.type === 'video' || block.type === 'image') {
                 const path = resolveSourcePath(block.source);
                 if (path && !processedAssets.has(block.id)) {
-                    // Wait, multiple blocks might use DIFFERENT sections of SAME asset.
-                    // But fluent-ffmpeg inputs are file-based.
-                    // We can reuse input index if it's the SAME file?
-                    // Yes, but for simplicity let's just add it again or map resolved path -> input index
                     // Map path -> index
-                    // processedAssets is actually path -> index
                     if (!inputMap.has(path)) {
                         command.input(path);
                         if (block.type === 'image') {
@@ -115,8 +113,6 @@ export async function POST(request: NextRequest) {
                 if (path && inputMap.has(path)) {
                     const i = inputMap.get(path)!;
                     // Trim logic
-                    // For video: `trim=start=0:end=duration,setpts=PTS-STARTPTS` (simplification: play from start)
-                    // If it's image, trimming works too (since loop)
                     const start = block.start;
                     const end = block.start + block.duration;
                     // x, y
@@ -134,9 +130,6 @@ export async function POST(request: NextRequest) {
                     const trimmedLabel = `block${idx}`;
 
                     // PTS synchronization:
-                    // We want the video to start playing (PTS=0) at block.start (Timeline PTS=start).
-                    // So we delay the video by block.start.
-                    // setpts=PTS-STARTPTS+(start/TB)
                     const ptsFilter = `setpts=PTS-STARTPTS+(${start}/TB)`;
 
                     const trimFilter = `[${i}:v]trim=duration=${block.duration},${ptsFilter}${scaleFilter}[${trimmedLabel}]`;
@@ -144,8 +137,6 @@ export async function POST(request: NextRequest) {
                     filters.push(trimFilter);
 
                     // Overlay
-                    // 'shortest=1' ensures if overlay runs out it doesn't freeze?
-                    // Actually with setpts and precise duration enable, it should be fine.
                     const overlayFilter = `${currentStream}[${trimmedLabel}]overlay=x=${x}:y=${y}:enable='between(t,${start},${end})'[${streamName}]`;
                     filters.push(overlayFilter);
                     currentStream = `[${streamName}]`;
