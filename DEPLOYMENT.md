@@ -76,7 +76,15 @@ npm run pages:build
 
 **Node version**: `20` or higher
 
-### 2.4 Environment Variables
+### 2.4 Troubleshooting Build Errors (ERESOLVE)
+
+If your build on Cloudflare Pages fails with an `ERESOLVE` error (peer dependency conflict):
+1. **Check for `.npmrc`**: I have already added a `.npmrc` file to your project with `legacy-peer-deps=true`. This should fix the issue on your next push.
+2. **Alternative**: If the error persists, add an **Environment Variable** in the Cloudflare Pages dashboard:
+   - **Key**: `NPM_FLAGS`
+   - **Value**: `--legacy-peer-deps`
+
+### 2.5 Environment Variables
 
 Add these in Cloudflare Pages settings:
 

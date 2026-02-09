@@ -115,6 +115,7 @@ clipix.ai-new/
    - Set build command: `npm run pages:build`
    - Set build output directory: `.vercel/output/static`
    - Add environment variables in Cloudflare dashboard
+   - **Note**: If the build fails with detailed dependency errors, ensure `.npmrc` has `legacy-peer-deps=true` (I have already included this in the project).
 
 **Note**: The `/api/render` route will not work on Cloudflare Pages due to FFmpeg binary limitations. You'll need to point to an external rendering service.
 
