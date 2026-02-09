@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { Template, Block, Asset } from '@/types';
+import { supabase } from './supabase';
 import { v4 as uuidv4 } from 'uuid';
 
 interface StoreState {
@@ -21,6 +22,13 @@ interface StoreState {
     setPlaceholder: (name: string, assetId: string | null) => void;
     setCurrentTime: (time: number) => void;
     setIsPlaying: (isPlaying: boolean) => void;
+
+    // DB
+    projectId: string | null;
+    projectName: string;
+    setProject: (id: string, name: string) => void;
+    saveProject: () => Promise<void>;
+    loadProject: (id: string) => Promise<void>;
 }
 
 const DEFAULT_TEMPLATE: Template = {
@@ -39,6 +47,8 @@ export const useStore = create<StoreState>((set) => ({
     placeholders: {},
     currentTime: 0,
     isPlaying: false,
+    projectId: null,
+    projectName: 'Untitled Project',
 
     setTemplate: (template) => set({ template }),
 
@@ -85,4 +95,63 @@ export const useStore = create<StoreState>((set) => ({
 
     setCurrentTime: (time) => set({ currentTime: time }),
     setIsPlaying: (isPlaying) => set({ isPlaying }),
+
+    setProject: (id, name) => set({ projectId: id, projectName: name }),
+
+    saveProject: async () => {
+        const state = useStore.getState();
+        if (!state.projectId) return;
+
+        // Persist local state (assets/placeholders) in JSON
+        const payload = {
+            ...state.template,
+            assets: state.assets,
+            placeholders: state.placeholders
+        };
+
+        const { error } = await supabase
+            .from('projects')
+            .update({
+                data: payload,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', state.projectId);
+
+        if (error) console.error("Save error", error);
+    },
+
+    loadProject: async (id) => {
+        const { data, error } = await supabase
+            .from('projects')
+            .select('*')
+            .eq('id', id)
+            .single();
+
+        if (error) {
+            console.error("Load error", error);
+            return;
+        }
+
+        if (data) {
+            const payload = data.data as any;
+
+            // Extract assets/placeholders
+            const assets = Array.isArray(payload.assets) ? payload.assets : [];
+            const placeholders = payload.placeholders || {};
+
+            // Reconstruct template 
+            const template: Template = {
+                canvas: payload.canvas || DEFAULT_TEMPLATE.canvas,
+                timeline: payload.timeline || []
+            };
+
+            set({
+                projectId: data.id,
+                projectName: data.name,
+                template: template,
+                assets: assets,
+                placeholders: placeholders
+            });
+        }
+    }
 }));

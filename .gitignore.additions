@@ -1,0 +1,11 @@
+# Add .env file (contains secrets)
+.env
+.env.local
+.env.production.local
+.env.development.local
+
+# Uploaded assets and rendered videos
+public/uploads/*
+public/renders/*
+!public/uploads/.gitkeep
+!public/renders/.gitkeep
