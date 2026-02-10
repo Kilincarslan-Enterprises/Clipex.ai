@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { Template, Block, Asset } from '@/types';
-import { supabase } from './supabase';
+import { createClient } from '@/utils/supabase/client';
+
+const supabase = createClient();
 import { v4 as uuidv4 } from 'uuid';
 
 interface StoreState {
