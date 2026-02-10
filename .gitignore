@@ -1,7 +1,7 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
-/node_modules
+node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -11,14 +11,13 @@
 !.yarn/versions
 
 # testing
-/coverage
-
-# next.js
-/.next/
-/out/
+coverage/
 
 # production
 /build
+dist/
+.next/
+out/
 
 # misc
 .DS_Store
@@ -45,3 +44,5 @@ public/uploads/*
 public/renders/*
 !public/uploads/.gitkeep
 !public/renders/.gitkeep
+render-service/data/*
+!render-service/data/.gitkeep
