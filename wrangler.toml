@@ -1,7 +1,4 @@
-#:schema https://isovalent.com/wrangler.schema.json
+name = "clipix-ai-new"
 compatibility_date = "2024-11-18"
 compatibility_flags = ["nodejs_compat"]
-
-[pages_build_config]
-build_command = "npm run pages:build"
-destination_dir = ".vercel/output/static"
+pages_build_output_dir = ".vercel/output/static"
