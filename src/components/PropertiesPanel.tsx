@@ -3,6 +3,7 @@
 import { useStore } from '@/lib/store';
 import { Block } from '@/types';
 import { Trash2 } from 'lucide-react';
+import { v4 as uuidv4 } from 'uuid';
 
 export function PropertiesPanel() {
     const {
@@ -31,6 +32,34 @@ export function PropertiesPanel() {
 
     const isPlaceholderSource = selectedBlock.source?.match(/^{{(.+)}}$/);
     const placeholderName = isPlaceholderSource ? isPlaceholderSource[1] : null;
+
+    const toggleDynamic = (isDynamic: boolean) => {
+        if (isDynamic) {
+            // Switch to dynamic
+            const shortId = uuidv4().slice(0, 8);
+            const pName = `${selectedBlock.type}_${shortId}`;
+            // If currently pointing to an asset ID, maybe we should auto-assign it?
+            // But for now just create a fresh placeholder
+            updateBlock(selectedBlock.id, { source: `{{${pName}}}` });
+            // We could optionally pre-fill the placeholder if we knew what asset URL it was, but URL -> ID mapping is tricky without lookup
+        } else {
+            // Switch to static
+            // We need a URL. If it was a placeholder, we lose the reference unless we know which asset it was.
+            // If there is an assigned asset in the placeholder, use that URL.
+            if (placeholderName) {
+                const assetId = placeholders[placeholderName];
+                if (assetId) {
+                    const asset = assets.find(a => a.id === assetId);
+                    if (asset) {
+                        updateBlock(selectedBlock.id, { source: asset.url });
+                        return;
+                    }
+                }
+            }
+            // Fallback
+            updateBlock(selectedBlock.id, { source: '' });
+        }
+    };
 
     return (
         <div className="flex flex-col h-full bg-neutral-900 overflow-y-auto">
@@ -103,45 +132,67 @@ export function PropertiesPanel() {
                                 onChange={(e) => updateBlock(selectedBlock.id, { text: e.target.value })}
                                 className="bg-neutral-800 border-none rounded px-2 py-1 text-sm text-neutral-200 focus:ring-1 focus:ring-blue-500 outline-none min-h-[80px]"
                             />
+                            <div className="grid grid-cols-2 gap-4 mt-2">
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-xs text-neutral-500 uppercase">Font Size</label>
+                                    <input type="number" value={selectedBlock.fontSize || 24} onChange={(e) => updateBlock(selectedBlock.id, { fontSize: parseInt(e.target.value) })} className="bg-neutral-800 border-none rounded px-2 py-1 text-sm text-neutral-200 outline-none" />
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-xs text-neutral-500 uppercase">Color</label>
+                                    <input type="color" value={selectedBlock.color || '#ffffff'} onChange={(e) => updateBlock(selectedBlock.id, { color: e.target.value })} className="h-8 w-full rounded border-none" />
+                                </div>
+                            </div>
                         </div>
                     )}
 
                     {(selectedBlock.type === 'video' || selectedBlock.type === 'image') && (
-                        <div className="flex flex-col gap-1">
-                            <label className="text-xs text-neutral-500 uppercase">Source</label>
-                            <input
-                                type="text"
-                                value={selectedBlock.source || ''}
-                                onChange={(e) => updateBlock(selectedBlock.id, { source: e.target.value })}
-                                placeholder="{{video_1}} or URL"
-                                className="bg-neutral-800 border-none rounded px-2 py-1 text-sm text-neutral-200 focus:ring-1 focus:ring-blue-500 outline-none"
-                            />
-                            <p className="text-[10px] text-neutral-500">
-                                Use {'{{placeholder}}'} to make it dynamic.
-                            </p>
-                        </div>
-                    )}
+                        <div className="flex flex-col gap-3">
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    id="dynamic-check"
+                                    checked={!!placeholderName}
+                                    onChange={(e) => toggleDynamic(e.target.checked)}
+                                    className="rounded bg-neutral-800 border-neutral-700 text-blue-600 focus:ring-blue-500"
+                                />
+                                <label htmlFor="dynamic-check" className="text-sm text-neutral-300 font-medium">Dynamic Asset</label>
+                            </div>
 
-                    {/* Placeholder Assignment UI */}
-                    {placeholderName && (
-                        <div className="bg-neutral-800/50 p-3 rounded border border-blue-900/30">
-                            <label className="text-xs text-blue-400 uppercase font-bold mb-2 block">
-                                Assign {placeholderName}
-                            </label>
-                            <select
-                                className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-sm text-neutral-300 focus:ring-1 focus:ring-blue-500 outline-none"
-                                value={placeholders[placeholderName] || ''}
-                                onChange={(e) => handlePlaceholderAssignment(placeholderName, e.target.value)}
-                            >
-                                <option value="">-- Select Asset --</option>
-                                {assets
-                                    .filter(a => selectedBlock.type === 'video' ? a.type === 'video' : true) // Filter by type roughly
-                                    .map(asset => (
-                                        <option key={asset.id} value={asset.id}>
-                                            {asset.name}
-                                        </option>
-                                    ))}
-                            </select>
+                            {placeholderName ? (
+                                <div className="bg-neutral-800/50 p-3 rounded border border-blue-900/30">
+                                    <label className="text-xs text-blue-400 uppercase font-bold mb-2 block">
+                                        Assign {placeholderName}
+                                    </label>
+                                    <select
+                                        className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-sm text-neutral-300 focus:ring-1 focus:ring-blue-500 outline-none"
+                                        value={placeholders[placeholderName] || ''}
+                                        onChange={(e) => handlePlaceholderAssignment(placeholderName, e.target.value)}
+                                    >
+                                        <option value="">-- Select Asset --</option>
+                                        {assets
+                                            .filter(a => selectedBlock.type === 'video' ? a.type === 'video' : true)
+                                            .map(asset => (
+                                                <option key={asset.id} value={asset.id}>
+                                                    {asset.name}
+                                                </option>
+                                            ))}
+                                    </select>
+                                </div>
+                            ) : (
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-xs text-neutral-500 uppercase">Static URL</label>
+                                    <input
+                                        type="text"
+                                        value={selectedBlock.source || ''}
+                                        onChange={(e) => updateBlock(selectedBlock.id, { source: e.target.value })}
+                                        placeholder="https://..."
+                                        className="bg-neutral-800 border-none rounded px-2 py-1 text-sm text-neutral-200 focus:ring-1 focus:ring-blue-500 outline-none"
+                                    />
+                                    <p className="text-[10px] text-neutral-500">
+                                        Or drop an asset here (not implemented yet, drag to timeline instead).
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -188,24 +239,6 @@ export function PropertiesPanel() {
                                 placeholder="Auto"
                                 onChange={(e) => updateBlock(selectedBlock.id, { height: parseFloat(e.target.value) || 0 })}
                                 className="bg-neutral-800 border-none rounded px-2 py-1 text-sm text-neutral-200 focus:ring-1 focus:ring-blue-500 outline-none"
-                            />
-                        </div>
-                    </div>
-                    <div className="flex flex-col gap-1">
-                        <label className="text-xs text-neutral-500 uppercase">Background Color</label>
-                        <div className="flex gap-2">
-                            <input
-                                type="color"
-                                value={selectedBlock.backgroundColor || '#000000'}
-                                onChange={(e) => updateBlock(selectedBlock.id, { backgroundColor: e.target.value })}
-                                className="h-8 w-8 rounded overflow-hidden cursor-pointer border-none p-0"
-                            />
-                            <input
-                                type="text"
-                                value={selectedBlock.backgroundColor || ''}
-                                onChange={(e) => updateBlock(selectedBlock.id, { backgroundColor: e.target.value })}
-                                placeholder="#000000"
-                                className="flex-1 bg-neutral-800 border-none rounded px-2 py-1 text-sm text-neutral-200 focus:ring-1 focus:ring-blue-500 outline-none"
                             />
                         </div>
                     </div>

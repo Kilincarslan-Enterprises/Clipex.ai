@@ -7,39 +7,69 @@ import { JsonEditor } from './JsonEditor';
 import { useStore } from '@/lib/store';
 import { Asset, Block } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
-import { Code, LayoutTemplate, Layers, Video, Play, Loader2 } from 'lucide-react';
+import { Code, LayoutTemplate, Layers, Video, Play, Loader2, ArrowLeft } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 
 export function EditorPanel() {
     const [viewMode, setViewMode] = useState<'visual' | 'json' | 'render'>('visual');
     const [isRendering, setIsRendering] = useState(false);
     const [renderUrl, setRenderUrl] = useState<string | null>(null);
+    const router = useRouter();
 
     const { addBlock, currentTime, setPlaceholder, template, assets, placeholders } = useStore();
+
+    const [renderProgress, setRenderProgress] = useState(0);
 
     const handleRender = async () => {
         setIsRendering(true);
         setRenderUrl(null);
+        setRenderProgress(0);
+
         try {
-            const response = await fetch('/api/render', {
+            // Start Job
+            const startResponse = await fetch('/api/render', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     template,
-                    assets, // We send assets to backend to resolve IDs to file paths
+                    assets,
                     placeholders
                 })
             });
 
-            if (!response.ok) throw new Error('Render failed');
+            if (!startResponse.ok) throw new Error('Failed to start render');
+            const { jobId } = await startResponse.json();
 
-            const data = await response.json();
-            setRenderUrl(data.url);
-            setViewMode('render');
-        } catch (e) {
+            // Poll Status
+            const pollInterval = setInterval(async () => {
+                try {
+                    const statusRes = await fetch(`/api/render/status/${jobId}`);
+                    if (!statusRes.ok) throw new Error('Status check failed');
+
+                    const statusData = await statusRes.json();
+                    setRenderProgress(statusData.progress || 0);
+
+                    if (statusData.status === 'completed') {
+                        clearInterval(pollInterval);
+                        setRenderUrl(statusData.url);
+                        setViewMode('render');
+                        setIsRendering(false);
+                    } else if (statusData.status === 'failed') {
+                        clearInterval(pollInterval);
+                        throw new Error(statusData.error || 'Render failed');
+                    }
+                } catch (e: any) {
+                    clearInterval(pollInterval);
+                    console.error("Polling error", e);
+                    alert(`Render failed: ${e.message}`);
+                    setIsRendering(false);
+                }
+            }, 1000);
+
+        } catch (e: any) {
             console.error("Render error", e);
-            alert("Render failed, check console");
-        } finally {
+            alert(`Render failed: ${e.message}`);
             setIsRendering(false);
         }
     };
@@ -95,6 +125,13 @@ export function EditorPanel() {
             <div className="flex h-12 items-center justify-between px-4 bg-neutral-900 border-b border-neutral-800 shrink-0">
                 <div className="flex items-center gap-2">
                     <button
+                        onClick={() => router.push('/')}
+                        className="mr-2 p-1.5 rounded hover:bg-neutral-800 text-neutral-400 hover:text-white transition-colors"
+                        title="Back to Dashboard"
+                    >
+                        <ArrowLeft size={18} />
+                    </button>
+                    <button
                         onClick={() => setViewMode('visual')}
                         className={cn(
                             "px-3 py-1.5 rounded text-sm flex items-center gap-2 transition-colors font-medium",
@@ -120,7 +157,7 @@ export function EditorPanel() {
                     className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded text-sm font-medium flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     {isRendering ? <Loader2 size={14} className="animate-spin" /> : <Video size={14} />}
-                    {isRendering ? 'Rendering...' : 'Render Video'}
+                    {isRendering ? `Rendering ${renderProgress}%...` : 'Render Video'}
                 </button>
             </div>
 

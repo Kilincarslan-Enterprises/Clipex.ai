@@ -3,7 +3,9 @@
 import { useStore } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { useRef, MouseEvent } from 'react';
-import { Play, Pause, ChevronRight, ChevronLeft } from 'lucide-react';
+import { Play, Pause } from 'lucide-react';
+import { v4 as uuidv4 } from 'uuid';
+import { Asset, Block } from '@/types';
 
 const PIXELS_PER_SECOND = 40;
 const RULER_INTERVAL = 5; // seconds
@@ -16,7 +18,8 @@ export function Timeline() {
         isPlaying,
         setIsPlaying,
         selectedBlockId,
-        selectBlock
+        selectBlock,
+        addBlock // Added missing destructuring
     } = useStore();
 
     const timelineRef = useRef<HTMLDivElement>(null);
@@ -31,6 +34,55 @@ export function Timeline() {
     };
 
     const togglePlay = () => setIsPlaying(!isPlaying);
+
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        if (!timelineRef.current) return;
+
+        const data = e.dataTransfer.getData('application/json');
+        if (!data) return;
+
+        try {
+            const parsed = JSON.parse(data);
+            if (parsed.type === 'asset') {
+                const asset = parsed.payload as Asset;
+                const rect = timelineRef.current.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const scrollLeft = timelineRef.current.scrollLeft;
+                const time = Math.max(0, (x + scrollLeft) / PIXELS_PER_SECOND);
+
+                // Determine track based on Y position (approximate)
+                const y = e.clientY - rect.top;
+                // Header is 30px (ruler) + maybe some padding
+                const trackIndex = Math.floor((y - 30) / 45);
+                const track = Math.max(0, trackIndex);
+
+                const duration = asset.type === 'video' ? 5 : 3;
+
+                // Add block
+                const newBlock: Block = {
+                    id: uuidv4(),
+                    type: asset.type === 'video' ? 'video' : 'image',
+                    track: track,
+                    start: time,
+                    duration: duration,
+                    source: asset.url,
+                    x: 0,
+                    y: 0,
+                    width: 0,
+                    height: 0,
+                };
+
+                addBlock(newBlock);
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const handleDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+    };
 
     // Determine total width based on max duration or fixed minimum
     const maxDuration = Math.max(
@@ -57,9 +109,11 @@ export function Timeline() {
             {/* Timeline Area */}
             <div className="flex-1 overflow-auto relative custom-scrollbar" ref={timelineRef}>
                 <div
-                    className="relative h-full"
+                    className="relative h-full min-h-[300px]"
                     style={{ width: totalWidth }}
                     onClick={handleTimelineClick}
+                    onDrop={handleDrop}
+                    onDragOver={handleDragOver}
                 >
                     {/* Ruler */}
                     <div className="h-6 border-b border-neutral-800 sticky top-0 bg-neutral-900 z-10 flex text-xs text-neutral-500">

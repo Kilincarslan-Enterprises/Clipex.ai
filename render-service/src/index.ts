@@ -27,6 +27,28 @@ fs.mkdirSync(RENDERS_DIR, { recursive: true });
 app.use('/renders', express.static(RENDERS_DIR));
 app.use('/uploads', express.static(UPLOADS_DIR));
 
+// ── Job Store (In-Memory) ───────────────────────────────
+interface RenderJob {
+    id: string;
+    status: 'pending' | 'processing' | 'completed' | 'failed';
+    progress: number;
+    url?: string;
+    error?: string;
+    createdAt: Date;
+}
+
+const jobs = new Map<string, RenderJob>();
+
+// Cleanup old jobs periodically
+setInterval(() => {
+    const now = Date.now();
+    for (const [id, job] of jobs.entries()) {
+        if (now - job.createdAt.getTime() > 1000 * 60 * 60) { // 1 hour
+            jobs.delete(id);
+        }
+    }
+}, 1000 * 60 * 60);
+
 // ── Upload ──────────────────────────────────────────────
 const storage = multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
@@ -80,10 +102,16 @@ interface RenderRequest {
     placeholders: Record<string, string | null>;
 }
 
-// ── Render ──────────────────────────────────────────────
-app.post('/render', async (req, res) => {
+// ── Render Logic ────────────────────────────────────────
+const processRender = async (jobId: string, reqBody: RenderRequest) => {
+    const job = jobs.get(jobId);
+    if (!job) return;
+
     try {
-        const { template, assets, placeholders } = req.body as RenderRequest;
+        job.status = 'processing';
+        job.progress = 0;
+
+        const { template, assets, placeholders } = reqBody;
         const { canvas, timeline } = template;
 
         const activeBlocks = timeline
@@ -113,6 +141,13 @@ app.post('/render', async (req, res) => {
             if (block.type !== 'video' && block.type !== 'image') continue;
             const src = resolveSource(block.source);
             if (!src || inputMap.has(src)) continue;
+
+            // Verify file exists
+            if (!fs.existsSync(src)) {
+                console.warn(`Source file not found: ${src}`);
+                continue;
+            }
+
             cmd.input(src);
             if (block.type === 'image') cmd.inputOption('-loop 1');
             inputMap.set(src, inputIdx++);
@@ -120,7 +155,10 @@ app.post('/render', async (req, res) => {
 
         // base colour layer
         const duration = Math.max(...activeBlocks.map((b) => b.start + b.duration));
-        cmd.input(`color=c=black:s=${canvas.width}x${canvas.height}:d=${duration}`).inputFormat('lavfi');
+        // Ensure duration is at least 1s to avoid ffmpeg errors
+        const safeDuration = Math.max(duration, 1);
+
+        cmd.input(`color=c=black:s=${canvas.width}x${canvas.height}:d=${safeDuration}`).inputFormat('lavfi');
         const baseIdx = inputIdx++;
 
         let stream = `[${baseIdx}:v]`;
@@ -155,26 +193,86 @@ app.post('/render', async (req, res) => {
         });
 
         // output
-        const outName = `render_${uuidv4()}.mp4`;
+        const outName = `render_${jobId}.mp4`;
         const outPath = path.join(RENDERS_DIR, outName);
 
         await new Promise<void>((resolve, reject) => {
             cmd
                 .complexFilter(filters)
                 .map(stream)
-                .outputOptions(['-c:v libx264', '-pix_fmt yuv420p', `-r ${canvas.fps}`, '-preset fast'])
+                .outputOptions([
+                    '-c:v libx264',
+                    '-pix_fmt yuv420p',
+                    `-r ${canvas.fps}`,
+                    '-preset veryfast', // Optimized for speed
+                    '-movflags +faststart'
+                ])
                 .output(outPath)
-                .on('end', () => resolve())
-                .on('error', (err) => reject(err))
+                .on('progress', (progress) => {
+                    // Update job progress
+                    // progress.percent is not always reliable with complex filters, but we use what we can
+                    if (progress.percent) {
+                        job.progress = Math.min(Math.round(progress.percent), 99);
+                    }
+                })
+                .on('end', () => {
+                    job.progress = 100;
+                    job.status = 'completed';
+                    job.url = `/renders/${outName}`;
+                    resolve();
+                })
+                .on('error', (err) => {
+                    console.error('FFmpeg error:', err);
+                    reject(err);
+                })
                 .run();
         });
 
-        res.json({ url: `/renders/${outName}` });
     } catch (err: any) {
-        console.error('Render error:', err);
-        res.status(500).json({ error: 'Render failed', details: err.message });
+        console.error('Render job error:', err);
+        job.status = 'failed';
+        job.error = err.message || 'Unknown error';
+    }
+};
+
+// ── Render Endpoints ────────────────────────────────────
+app.post('/render', (req, res) => {
+    try {
+        const jobId = uuidv4();
+        const job: RenderJob = {
+            id: jobId,
+            status: 'pending',
+            progress: 0,
+            createdAt: new Date()
+        };
+        jobs.set(jobId, job);
+
+        // Start processing in background
+        processRender(jobId, req.body as RenderRequest);
+
+        res.json({ jobId });
+    } catch (err: any) {
+        res.status(500).json({ error: 'Failed to start render', details: err.message });
     }
 });
+
+app.get('/status/:id', (req, res) => {
+    const jobId = req.params.id;
+    const job = jobs.get(jobId);
+
+    if (!job) {
+        return res.status(404).json({ error: 'Job not found' });
+    }
+
+    res.json({
+        id: job.id,
+        status: job.status,
+        progress: job.progress,
+        url: job.url,
+        error: job.error
+    });
+});
+
 
 // ── Health ──────────────────────────────────────────────
 app.get('/health', (_req, res) => {
