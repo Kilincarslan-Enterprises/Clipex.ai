@@ -6,6 +6,8 @@ import { useEffect, useState } from 'react';
 import { Loader2, Plus, Film } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 
+export const dynamic = 'force-dynamic';
+
 export default function DashboardPage() {
     const router = useRouter();
     const [projects, setProjects] = useState<any[]>([]);
