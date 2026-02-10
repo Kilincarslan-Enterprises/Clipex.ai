@@ -2,19 +2,24 @@ version: '3.8'
 
 services:
   render:
+    # Da die Datei jetzt im 'render-service' Ordner liegt, ist der Context '.'
     build:
-      context: ./render-service
+      context: .
       dockerfile: Dockerfile
     container_name: clipex-render
-    ports:
-      - "3001:3001"
+    # Keine Ports nach außen öffnen (Sicherheit!), 
+    # da der Tunnel-Container intern über das Netzwerk zugreift.
+    expose:
+      - "3001"
     environment:
       - NODE_ENV=production
       - PORT=3001
-      - CORS_ORIGIN=${CORS_ORIGIN:-*}
+      - CORS_ORIGIN=https://clipex-ai.kilincarslanenterprises.com
     volumes:
       - render-uploads:/app/data/uploads
       - render-outputs:/app/data/renders
+    networks:
+      - DEIN_CLOUDFLARE_NETWORK # Platzhalter für dein existierendes Netzwerk
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/health"]
@@ -26,3 +31,7 @@ services:
 volumes:
   render-uploads:
   render-outputs:
+
+networks:
+  DEIN_CLOUDFLARE_NETWORK:
+    external: true
