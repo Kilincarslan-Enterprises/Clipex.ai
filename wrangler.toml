@@ -1,0 +1,7 @@
+#:schema https://isovalent.com/wrangler.schema.json
+compatibility_date = "2024-11-18"
+compatibility_flags = ["nodejs_compat"]
+
+[pages_build_config]
+build_command = "npm run pages:build"
+destination_dir = ".vercel/output/static"
