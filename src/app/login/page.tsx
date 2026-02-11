@@ -4,14 +4,36 @@ import { Auth } from '@supabase/auth-ui-react'
 import { ThemeSupa } from '@supabase/auth-ui-shared'
 import { createClient } from '@/utils/supabase/client'
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 export default function LoginPage() {
     const supabase = createClient()
+    const router = useRouter()
     const [host, setHost] = useState('')
 
     useEffect(() => {
         setHost(window.location.origin)
-    }, [])
+
+        // Check current session
+        const checkUser = async () => {
+            const { data: { user } } = await supabase.auth.getUser()
+            if (user) {
+                router.push('/')
+            }
+        }
+        checkUser()
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            console.log('Auth state change:', event, session ? 'Session exists' : 'No session')
+            if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session) {
+                console.log('Redirecting to dashboard...')
+                router.push('/')
+                router.refresh()
+            }
+        })
+
+        return () => subscription.unsubscribe()
+    }, [supabase, router])
 
     return (
         <div className="flex min-h-screen flex-col items-center justify-center bg-neutral-950 p-4">
