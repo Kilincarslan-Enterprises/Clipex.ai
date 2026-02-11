@@ -7,7 +7,7 @@ import { JsonEditor } from './JsonEditor';
 import { useStore } from '@/lib/store';
 import { Asset, Block } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
-import { Code, LayoutTemplate, Layers, Video, Play, Loader2, ArrowLeft } from 'lucide-react';
+import { Code, Layers, Video, Loader2, ArrowLeft } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 
@@ -76,34 +76,51 @@ export function EditorPanel() {
 
     const handleDrop = (e: React.DragEvent) => {
         e.preventDefault();
-        if (viewMode !== 'visual') return; // Only allow drop in visual mode
+        if (viewMode !== 'visual') return;
 
         const data = e.dataTransfer.getData('application/json');
         if (!data) return;
 
         try {
             const parsed = JSON.parse(data);
-            if (parsed.type === 'asset') {
+
+            if (parsed.type === 'library') {
+                // Library item (dragged from the type cards)
+                const blockType = parsed.blockType as Block['type'];
+                const newBlock: Block = {
+                    id: uuidv4(),
+                    type: blockType,
+                    track: 0,
+                    start: currentTime,
+                    duration: blockType === 'text' ? 3 : 5,
+                    x: 0,
+                    y: 0,
+                    width: 0,
+                    height: 0,
+                    ...(blockType === 'text' ? { text: 'Your Text Here', fontSize: 48, color: '#ffffff' } : {}),
+                    ...(blockType === 'audio' ? { volume: 100, loop: false } : {}),
+                    source: blockType === 'text' ? undefined : '',
+                };
+                addBlock(newBlock);
+            } else if (parsed.type === 'asset') {
                 const asset = parsed.payload as Asset;
                 const shortId = uuidv4().slice(0, 8);
                 const placeholderName = `${asset.type}_${shortId}`;
 
-                // 1. Create Placeholder Loopup
                 setPlaceholder(placeholderName, asset.id);
 
-                // 2. Create Block
                 const newBlock: Block = {
                     id: uuidv4(),
-                    type: asset.type === 'video' ? 'video' : 'image',
+                    type: asset.type === 'audio' ? 'audio' : asset.type === 'video' ? 'video' : 'image',
                     track: 0,
                     start: currentTime,
-                    duration: asset.type === 'video' ? 5 : 3,
+                    duration: asset.type === 'video' ? 5 : asset.type === 'audio' ? 5 : 3,
                     source: `{{${placeholderName}}}`,
                     x: 0,
                     y: 0,
-                    width: 0, // 0 usually means auto/full width in my simplistic model logic or treated as 100%
+                    width: 0,
                     height: 0,
-                    backgroundColor: 'transparent'
+                    ...(asset.type === 'audio' ? { volume: 100, loop: false } : {}),
                 };
 
                 addBlock(newBlock);

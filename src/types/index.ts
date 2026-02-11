@@ -1,4 +1,4 @@
-export type BlockType = 'video' | 'text' | 'image';
+export type BlockType = 'video' | 'text' | 'image' | 'audio';
 
 export interface Block {
   id: string;
@@ -18,6 +18,9 @@ export interface Block {
   fontSize?: number;
   color?: string;
   backgroundColor?: string;
+  // Audio
+  volume?: number; // 0-100
+  loop?: boolean;
 }
 
 export interface CanvasSettings {
@@ -34,7 +37,7 @@ export interface Template {
 export interface Asset {
   id: string;
   name: string;
-  type: 'video' | 'image';
+  type: 'video' | 'image' | 'audio';
   url: string;
   file?: File; // For local preview
 }

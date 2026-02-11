@@ -5,10 +5,17 @@ import { cn } from '@/lib/utils';
 import { useRef, MouseEvent } from 'react';
 import { Play, Pause } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
-import { Asset, Block } from '@/types';
+import { Asset, Block, BlockType } from '@/types';
 
 const PIXELS_PER_SECOND = 40;
 const RULER_INTERVAL = 5; // seconds
+
+const BLOCK_COLORS: Record<BlockType, { bg: string; border: string; selected: string; selectedBorder: string }> = {
+    video: { bg: 'bg-blue-900/60', border: 'border-blue-800', selected: 'bg-blue-800', selectedBorder: 'border-blue-500' },
+    image: { bg: 'bg-emerald-900/60', border: 'border-emerald-800', selected: 'bg-emerald-800', selectedBorder: 'border-emerald-500' },
+    text: { bg: 'bg-amber-900/60', border: 'border-amber-800', selected: 'bg-amber-800', selectedBorder: 'border-amber-500' },
+    audio: { bg: 'bg-purple-900/60', border: 'border-purple-800', selected: 'bg-purple-800', selectedBorder: 'border-purple-500' },
+};
 
 export function Timeline() {
     const {
@@ -19,7 +26,8 @@ export function Timeline() {
         setIsPlaying,
         selectedBlockId,
         selectBlock,
-        addBlock // Added missing destructuring
+        addBlock,
+        setPlaceholder
     } = useStore();
 
     const timelineRef = useRef<HTMLDivElement>(null);
@@ -44,35 +52,55 @@ export function Timeline() {
 
         try {
             const parsed = JSON.parse(data);
-            if (parsed.type === 'asset') {
-                const asset = parsed.payload as Asset;
-                const rect = timelineRef.current.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const scrollLeft = timelineRef.current.scrollLeft;
-                const time = Math.max(0, (x + scrollLeft) / PIXELS_PER_SECOND);
+            const rect = timelineRef.current.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const scrollLeft = timelineRef.current.scrollLeft;
+            const time = Math.max(0, (x + scrollLeft) / PIXELS_PER_SECOND);
 
-                // Determine track based on Y position (approximate)
-                const y = e.clientY - rect.top;
-                // Header is 30px (ruler) + maybe some padding
-                const trackIndex = Math.floor((y - 30) / 45);
-                const track = Math.max(0, trackIndex);
+            const y = e.clientY - rect.top;
+            const trackIndex = Math.floor((y - 30) / 45);
+            const track = Math.max(0, trackIndex);
 
-                const duration = asset.type === 'video' ? 5 : 3;
-
-                // Add block
+            if (parsed.type === 'library') {
+                // Library item (generic block type)
+                const blockType = parsed.blockType as BlockType;
                 const newBlock: Block = {
                     id: uuidv4(),
-                    type: asset.type === 'video' ? 'video' : 'image',
+                    type: blockType,
                     track: track,
                     start: time,
-                    duration: duration,
-                    source: asset.url,
+                    duration: blockType === 'text' ? 3 : 5,
                     x: 0,
                     y: 0,
                     width: 0,
                     height: 0,
+                    ...(blockType === 'text' ? { text: 'Your Text Here', fontSize: 48, color: '#ffffff' } : {}),
+                    ...(blockType === 'audio' ? { volume: 100, loop: false } : {}),
+                    source: blockType === 'text' ? undefined : '',
                 };
+                addBlock(newBlock);
+            } else if (parsed.type === 'asset') {
+                // Uploaded asset
+                const asset = parsed.payload as Asset;
+                const shortId = uuidv4().slice(0, 8);
+                const placeholderName = `${asset.type}_${shortId}`;
 
+                setPlaceholder(placeholderName, asset.id);
+
+                const duration = asset.type === 'video' ? 5 : asset.type === 'audio' ? 5 : 3;
+                const newBlock: Block = {
+                    id: uuidv4(),
+                    type: asset.type === 'audio' ? 'audio' : asset.type === 'video' ? 'video' : 'image',
+                    track: track,
+                    start: time,
+                    duration: duration,
+                    source: `{{${placeholderName}}}`,
+                    x: 0,
+                    y: 0,
+                    width: 0,
+                    height: 0,
+                    ...(asset.type === 'audio' ? { volume: 100, loop: false } : {}),
+                };
                 addBlock(newBlock);
             }
         } catch (err) {
@@ -89,12 +117,15 @@ export function Timeline() {
         30, // Minimum 30s
         ...template.timeline.map(b => b.start + b.duration)
     );
-    const totalWidth = maxDuration * PIXELS_PER_SECOND + 200; // Extra buffer
+    const totalWidth = maxDuration * PIXELS_PER_SECOND + 200;
+
+    // Determine how many tracks exist
+    const maxTrack = Math.max(0, ...template.timeline.map(b => b.track));
 
     return (
         <div className="flex flex-col h-full bg-neutral-900 border-t border-neutral-800">
             {/* Toolbar */}
-            <div className="h-10 border-b border-neutral-800 flex items-center px-4 gap-2 bg-neutral-900">
+            <div className="h-10 border-b border-neutral-800 flex items-center px-4 gap-2 bg-neutral-900 shrink-0">
                 <button
                     onClick={togglePlay}
                     className="p-1 hover:bg-neutral-800 rounded text-neutral-200"
@@ -109,8 +140,8 @@ export function Timeline() {
             {/* Timeline Area */}
             <div className="flex-1 overflow-auto relative custom-scrollbar" ref={timelineRef}>
                 <div
-                    className="relative h-full min-h-[300px]"
-                    style={{ width: totalWidth }}
+                    className="relative min-h-full"
+                    style={{ width: totalWidth, minHeight: Math.max(200, (maxTrack + 2) * 45 + 40) }}
                     onClick={handleTimelineClick}
                     onDrop={handleDrop}
                     onDragOver={handleDragOver}
@@ -138,28 +169,34 @@ export function Timeline() {
 
                     {/* Blocks */}
                     <div className="pt-2 px-2">
-                        {template.timeline.map((block) => (
-                            <div
-                                key={block.id}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    selectBlock(block.id);
-                                }}
-                                className={cn(
-                                    "absolute h-10 rounded border text-xs flex items-center px-2 py-1 cursor-pointer select-none overflow-hidden",
-                                    selectedBlockId === block.id
-                                        ? "bg-blue-900 border-blue-500 text-white z-10"
-                                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
-                                )}
-                                style={{
-                                    left: block.start * PIXELS_PER_SECOND,
-                                    width: block.duration * PIXELS_PER_SECOND,
-                                    top: 30 + (block.track * 45) // Simple track stacking
-                                }}
-                            >
-                                <span className="truncate">{block.type} - {block.id.slice(0, 4)}</span>
-                            </div>
-                        ))}
+                        {template.timeline.map((block) => {
+                            const colors = BLOCK_COLORS[block.type] || BLOCK_COLORS.video;
+                            const isSelected = selectedBlockId === block.id;
+                            return (
+                                <div
+                                    key={block.id}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        selectBlock(block.id);
+                                    }}
+                                    className={cn(
+                                        "absolute h-10 rounded border text-xs flex items-center px-2 py-1 cursor-pointer select-none overflow-hidden transition-colors",
+                                        isSelected
+                                            ? `${colors.selected} ${colors.selectedBorder} text-white z-10 shadow-lg`
+                                            : `${colors.bg} ${colors.border} text-neutral-300 hover:brightness-125`
+                                    )}
+                                    style={{
+                                        left: block.start * PIXELS_PER_SECOND,
+                                        width: Math.max(block.duration * PIXELS_PER_SECOND, 30),
+                                        top: 30 + (block.track * 45)
+                                    }}
+                                >
+                                    <span className="truncate font-medium">
+                                        {block.type === 'text' ? (block.text?.slice(0, 20) || 'Text') : `${block.type}`}
+                                    </span>
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
             </div>
