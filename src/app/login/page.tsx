@@ -12,27 +12,41 @@ export default function LoginPage() {
     const [host, setHost] = useState('')
 
     useEffect(() => {
+        console.log('LoginPage mounted, setting host...')
         setHost(window.location.origin)
 
-        // Check current session
+        // Check current session immediately
         const checkUser = async () => {
+            console.log('Checking for existing session...')
             const { data: { user } } = await supabase.auth.getUser()
             if (user) {
+                console.log('Session found, redirecting...', user.email)
                 router.push('/')
+            } else {
+                console.log('No active session found.')
             }
         }
         checkUser()
 
+        console.log('Setting up onAuthStateChange listener...')
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-            console.log('Auth state change:', event, session ? 'Session exists' : 'No session')
-            if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session) {
-                console.log('Redirecting to dashboard...')
-                router.push('/')
-                router.refresh()
+            console.log('Auth state change event detected:', event)
+            if (session) {
+                console.log('Session exists for user:', session.user.email)
+                if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+                    console.log('Valid login event, navigating to dashboard...')
+                    router.push('/')
+                    router.refresh()
+                }
+            } else {
+                console.log('No session in auth state change.')
             }
         })
 
-        return () => subscription.unsubscribe()
+        return () => {
+            console.log('LoginPage unmounting, cleaning up listener.')
+            subscription.unsubscribe()
+        }
     }, [supabase, router])
 
     return (
