@@ -21,6 +21,18 @@ export interface Block {
   // Audio
   volume?: number; // 0-100
   loop?: boolean;
+  // Dynamic / Placeholder flag
+  isDynamic?: boolean; // If true, source or text is a {{placeholder}} that gets filled via API
+  // Subtitles
+  subtitleEnabled?: boolean; // Enable automatic subtitles for this block
+  subtitleSource?: string; // VTT content string, URL to .vtt, or placeholder {{subtitle_1}}
+  subtitleStyleId?: string; // ID of a text block to copy style from (fontSize, color, bg)
+}
+
+export interface SubtitleCue {
+  start: number; // seconds
+  end: number; // seconds
+  text: string;
 }
 
 export interface CanvasSettings {
