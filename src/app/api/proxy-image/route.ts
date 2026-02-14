@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const runtime = 'edge';
+
 /**
  * SECURE IMAGE PROXY
  * - Bypasses CORS by fetching images/videos server-side.
