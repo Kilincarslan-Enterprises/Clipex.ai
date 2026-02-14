@@ -203,14 +203,69 @@ export function PropertiesPanel() {
                             </div>
                         ) : (
                             <div className="flex flex-col gap-1">
-                                <label className="text-xs text-neutral-500 uppercase">Static URL</label>
+                                <label className="text-xs text-neutral-500 uppercase">Source URL</label>
                                 <input
                                     type="text"
                                     value={selectedBlock.source || ''}
                                     onChange={(e) => updateBlock(selectedBlock.id, { source: e.target.value })}
-                                    placeholder="https://..."
+                                    placeholder="https://bucket.example.com/video.mp4"
                                     className="bg-neutral-800 border-none rounded px-2 py-1 text-sm text-neutral-200 focus:ring-1 focus:ring-blue-500 outline-none"
                                 />
+                            </div>
+                        )}
+
+                        {/* ── Subtitles ── */}
+                        <hr className="border-neutral-800" />
+                        <h3 className="text-xs font-bold text-cyan-400 uppercase">Subtitles</h3>
+
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="checkbox"
+                                id="subtitle-enable"
+                                checked={selectedBlock.subtitleEnabled || false}
+                                onChange={(e) => updateBlock(selectedBlock.id, { subtitleEnabled: e.target.checked })}
+                                className="rounded bg-neutral-800 border-neutral-700 text-cyan-600 focus:ring-cyan-500"
+                            />
+                            <label htmlFor="subtitle-enable" className="text-sm text-neutral-300 font-medium">Enable Subtitles</label>
+                        </div>
+
+                        {selectedBlock.subtitleEnabled && (
+                            <div className="space-y-3 bg-neutral-800/30 p-3 rounded border border-cyan-900/20">
+                                {/* VTT Input */}
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-xs text-neutral-500 uppercase">VTT Source</label>
+                                    <textarea
+                                        value={selectedBlock.subtitleSource || ''}
+                                        onChange={(e) => updateBlock(selectedBlock.id, { subtitleSource: e.target.value })}
+                                        placeholder={"Paste VTT content, URL to .vtt file, or {{placeholder}}\n\nWEBVTT\n\n00:00.000 --> 00:02.000\nHello World"}
+                                        className="bg-neutral-900 border border-neutral-700 rounded px-2 py-1.5 text-sm text-neutral-200 focus:ring-1 focus:ring-cyan-500 outline-none min-h-[100px] resize-none font-mono text-xs"
+                                    />
+                                    <span className="text-[10px] text-neutral-600">
+                                        Accepts: VTT content, https://...file.vtt, or {'{{placeholder}}'}
+                                    </span>
+                                </div>
+
+                                {/* Style Reference */}
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-xs text-neutral-500 uppercase">Subtitle Style (from Text Block)</label>
+                                    <select
+                                        className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-sm text-neutral-300 focus:ring-1 focus:ring-cyan-500 outline-none"
+                                        value={selectedBlock.subtitleStyleId || ''}
+                                        onChange={(e) => updateBlock(selectedBlock.id, { subtitleStyleId: e.target.value || undefined })}
+                                    >
+                                        <option value="">Default Style (white, 36px)</option>
+                                        {template.timeline
+                                            .filter(b => b.type === 'text')
+                                            .map(tb => (
+                                                <option key={tb.id} value={tb.id}>
+                                                    {tb.text ? `"${tb.text.slice(0, 20)}${tb.text.length > 20 ? '...' : ''}"` : 'Untitled Text'} — {tb.fontSize || 24}px, {tb.color || '#fff'}
+                                                </option>
+                                            ))}
+                                    </select>
+                                    <span className="text-[10px] text-neutral-600">
+                                        Inherits font size, color, and background from the selected text block
+                                    </span>
+                                </div>
                             </div>
                         )}
                     </div>

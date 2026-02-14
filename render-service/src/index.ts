@@ -6,6 +6,8 @@ import path from 'path';
 import fs from 'fs';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
+import https from 'https';
+import http from 'http';
 
 // ── FFmpeg ──────────────────────────────────────────────
 if (ffmpegStatic) ffmpeg.setFfmpegPath(ffmpegStatic);
@@ -20,8 +22,10 @@ app.use(express.json({ limit: '50mb' }));
 // Ensure dirs exist
 const UPLOADS_DIR = path.join(__dirname, '..', 'data', 'uploads');
 const RENDERS_DIR = path.join(__dirname, '..', 'data', 'renders');
+const TEMP_DIR = path.join(__dirname, '..', 'data', 'temp');
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 fs.mkdirSync(RENDERS_DIR, { recursive: true });
+fs.mkdirSync(TEMP_DIR, { recursive: true });
 
 // Serve rendered files
 app.use('/renders', express.static(RENDERS_DIR));
@@ -65,10 +69,147 @@ app.post('/upload', upload.single('file'), (req, res) => {
     res.json({ url: publicUrl, filename: req.file.filename });
 });
 
+// ── Remote Asset Download ───────────────────────────────
+const downloadAsset = (url: string): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const ext = path.extname(new URL(url).pathname) || '.bin';
+        const filename = `${uuidv4()}${ext}`;
+        const destPath = path.join(TEMP_DIR, filename);
+        const file = fs.createWriteStream(destPath);
+
+        const client = url.startsWith('https') ? https : http;
+
+        const request = client.get(url, (response) => {
+            // Follow redirects
+            if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+                file.close();
+                fs.unlinkSync(destPath);
+                return downloadAsset(response.headers.location).then(resolve).catch(reject);
+            }
+
+            if (response.statusCode && response.statusCode !== 200) {
+                file.close();
+                fs.unlinkSync(destPath);
+                return reject(new Error(`Failed to download ${url}: HTTP ${response.statusCode}`));
+            }
+
+            response.pipe(file);
+            file.on('finish', () => {
+                file.close();
+                console.log(`Downloaded remote asset: ${url} -> ${destPath}`);
+                resolve(destPath);
+            });
+        });
+
+        request.on('error', (err) => {
+            file.close();
+            if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
+            reject(err);
+        });
+
+        // 60s timeout
+        request.setTimeout(60000, () => {
+            request.destroy();
+            file.close();
+            if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
+            reject(new Error(`Download timeout for ${url}`));
+        });
+    });
+};
+
+// ── VTT Parser ──────────────────────────────────────────
+interface SubtitleCue {
+    start: number;
+    end: number;
+    text: string;
+}
+
+const parseVTTTimestamp = (ts: string): number => {
+    // Format: HH:MM:SS.mmm or MM:SS.mmm
+    const parts = ts.trim().split(':');
+    let hours = 0, minutes = 0, seconds = 0;
+    if (parts.length === 3) {
+        hours = parseFloat(parts[0]);
+        minutes = parseFloat(parts[1]);
+        seconds = parseFloat(parts[2]);
+    } else if (parts.length === 2) {
+        minutes = parseFloat(parts[0]);
+        seconds = parseFloat(parts[1]);
+    }
+    return hours * 3600 + minutes * 60 + seconds;
+};
+
+const parseVTT = (vttContent: string): SubtitleCue[] => {
+    const cues: SubtitleCue[] = [];
+    const lines = vttContent.replace(/\r\n/g, '\n').split('\n');
+    let i = 0;
+
+    // Skip WEBVTT header
+    while (i < lines.length && !lines[i].includes('-->')) {
+        i++;
+    }
+
+    while (i < lines.length) {
+        const line = lines[i].trim();
+
+        if (line.includes('-->')) {
+            const [startStr, endStr] = line.split('-->').map(s => s.trim());
+            const start = parseVTTTimestamp(startStr);
+            const end = parseVTTTimestamp(endStr);
+
+            // Collect text lines
+            i++;
+            const textLines: string[] = [];
+            while (i < lines.length && lines[i].trim() !== '') {
+                textLines.push(lines[i].trim());
+                i++;
+            }
+
+            const text = textLines.join(' ').replace(/<[^>]+>/g, ''); // Strip HTML tags
+            if (text) {
+                cues.push({ start, end, text });
+            }
+        } else {
+            i++;
+        }
+    }
+
+    return cues;
+};
+
+// ── Subtitle Chunking ───────────────────────────────────
+// Split long cues into smaller "karaoke-style" chunks of ~3 words
+const chunkSubtitleCues = (cues: SubtitleCue[], maxWordsPerChunk: number = 3): SubtitleCue[] => {
+    const chunked: SubtitleCue[] = [];
+
+    for (const cue of cues) {
+        const words = cue.text.split(/\s+/).filter(w => w.length > 0);
+        if (words.length <= maxWordsPerChunk) {
+            chunked.push(cue);
+            continue;
+        }
+
+        const totalDuration = cue.end - cue.start;
+        const numChunks = Math.ceil(words.length / maxWordsPerChunk);
+        const chunkDuration = totalDuration / numChunks;
+
+        for (let c = 0; c < numChunks; c++) {
+            const chunkWords = words.slice(c * maxWordsPerChunk, (c + 1) * maxWordsPerChunk);
+            chunked.push({
+                start: cue.start + c * chunkDuration,
+                end: cue.start + (c + 1) * chunkDuration,
+                text: chunkWords.join(' '),
+            });
+        }
+    }
+
+    return chunked;
+};
+
 // ── Types ───────────────────────────────────────────────
 interface Block {
     id: string;
-    type: 'video' | 'image' | 'text';
+    type: 'video' | 'image' | 'text' | 'audio';
     source?: string;
     text?: string;
     start: number;
@@ -81,6 +222,12 @@ interface Block {
     fontSize?: number;
     color?: string;
     backgroundColor?: string;
+    isDynamic?: boolean;
+    subtitleEnabled?: boolean;
+    subtitleSource?: string;
+    subtitleStyleId?: string;
+    volume?: number;
+    loop?: boolean;
 }
 
 interface Canvas {
@@ -107,6 +254,8 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
     const job = jobs.get(jobId);
     if (!job) return;
 
+    const tempFiles: string[] = []; // Track temp files for cleanup
+
     try {
         job.status = 'processing';
         job.progress = 0;
@@ -118,17 +267,75 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
             .filter((b) => b.duration > 0)
             .sort((a, b) => a.track - b.track);
 
-        // ─ resolve source path ─
-        const resolveSource = (source?: string): string | null => {
+        // ─ resolve source path (supports remote URLs) ─
+        const resolveSource = async (source?: string): Promise<string | null> => {
             if (!source) return null;
+
+            // Direct remote URL
+            if (source.startsWith('http://') || source.startsWith('https://')) {
+                const localPath = await downloadAsset(source);
+                tempFiles.push(localPath);
+                return localPath;
+            }
+
+            // Placeholder {{key}}
             const m = source.match(/^{{(.+)}}$/);
             if (!m) return null;
             const assetId = placeholders[m[1]];
             if (!assetId) return null;
+
+            // Check if assetId is itself a URL (sent via API)
+            if (assetId.startsWith('http://') || assetId.startsWith('https://')) {
+                const localPath = await downloadAsset(assetId);
+                tempFiles.push(localPath);
+                return localPath;
+            }
+
             const asset = assets.find((a) => a.id === assetId);
             if (!asset) return null;
-            // asset.url is like "/uploads/xxx.mp4"
+
+            // Asset URL could be a remote URL or a local path
+            if (asset.url.startsWith('http://') || asset.url.startsWith('https://')) {
+                const localPath = await downloadAsset(asset.url);
+                tempFiles.push(localPath);
+                return localPath;
+            }
+
+            // Local path: /uploads/xxx.mp4
             return path.join(UPLOADS_DIR, path.basename(asset.url));
+        };
+
+        // ─ Resolve VTT content ─
+        const resolveVTT = async (subtitleSource?: string): Promise<string | null> => {
+            if (!subtitleSource) return null;
+
+            // Placeholder {{key}}
+            const m = subtitleSource.match(/^{{(.+)}}$/);
+            if (m) {
+                const value = placeholders[m[1]];
+                if (!value) return null;
+                // Value could be VTT content or URL
+                if (value.startsWith('http://') || value.startsWith('https://')) {
+                    const localPath = await downloadAsset(value);
+                    tempFiles.push(localPath);
+                    return fs.readFileSync(localPath, 'utf-8');
+                }
+                return value; // Raw VTT content from API
+            }
+
+            // Direct URL to .vtt file
+            if (subtitleSource.startsWith('http://') || subtitleSource.startsWith('https://')) {
+                const localPath = await downloadAsset(subtitleSource);
+                tempFiles.push(localPath);
+                return fs.readFileSync(localPath, 'utf-8');
+            }
+
+            // Raw VTT content string
+            if (subtitleSource.includes('-->')) {
+                return subtitleSource;
+            }
+
+            return null;
         };
 
         // ─ build ffmpeg command ─
@@ -136,10 +343,10 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
         const inputMap = new Map<string, number>();
         let inputIdx = 0;
 
-        // add media inputs
+        // add media inputs (now async for remote downloads)
         for (const block of activeBlocks) {
             if (block.type !== 'video' && block.type !== 'image') continue;
-            const src = resolveSource(block.source);
+            const src = await resolveSource(block.source);
             if (!src || inputMap.has(src)) continue;
 
             // Verify file exists
@@ -163,13 +370,14 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
 
         let stream = `[${baseIdx}:v]`;
         const filters: string[] = [];
+        let labelCounter = 0;
 
-        activeBlocks.forEach((block, i) => {
-            const label = `layer${i}`;
+        for (const block of activeBlocks) {
+            const label = `layer${labelCounter}`;
 
             if (block.type === 'video' || block.type === 'image') {
-                const src = resolveSource(block.source);
-                if (!src || !inputMap.has(src)) return;
+                const src = await resolveSource(block.source);
+                if (!src || !inputMap.has(src)) continue;
                 const idx = inputMap.get(src)!;
                 const { start, duration: dur, x = 0, y = 0, width: w, height: h } = block;
                 const end = start + dur;
@@ -177,9 +385,47 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
                     ? `,scale=${w && w > 0 ? w : -1}:${h && h > 0 ? h : -1}`
                     : '';
                 const pts = `setpts=PTS-STARTPTS+(${start}/TB)`;
-                filters.push(`[${idx}:v]trim=duration=${dur},${pts}${scale}[blk${i}]`);
-                filters.push(`${stream}[blk${i}]overlay=x=${x}:y=${y}:enable='between(t,${start},${end})'[${label}]`);
+                filters.push(`[${idx}:v]trim=duration=${dur},${pts}${scale}[blk${labelCounter}]`);
+                filters.push(`${stream}[blk${labelCounter}]overlay=x=${x}:y=${y}:enable='between(t,${start},${end})'[${label}]`);
                 stream = `[${label}]`;
+                labelCounter++;
+
+                // ─ Subtitle rendering for this block ─
+                if (block.subtitleEnabled && block.subtitleSource) {
+                    const vttContent = await resolveVTT(block.subtitleSource);
+                    if (vttContent) {
+                        const rawCues = parseVTT(vttContent);
+                        const cues = chunkSubtitleCues(rawCues);
+
+                        // Get style from linked text block
+                        let fontSize = 36;
+                        let fontColor = 'white';
+                        let bgColor: string | null = null;
+
+                        if (block.subtitleStyleId) {
+                            const styleBlock = activeBlocks.find(b => b.id === block.subtitleStyleId);
+                            if (styleBlock) {
+                                fontSize = styleBlock.fontSize || fontSize;
+                                fontColor = styleBlock.color || fontColor;
+                                bgColor = styleBlock.backgroundColor || null;
+                            }
+                        }
+
+                        // Generate drawtext for each subtitle cue
+                        for (const cue of cues) {
+                            const subLabel = `sub${labelCounter}`;
+                            const escaped = cue.text.replace(/:/g, '\\:').replace(/'/g, '');
+                            // Center horizontally, place near bottom (80% of height)
+                            const subY = Math.round(canvas.height * 0.82);
+                            let dt = `${stream}drawtext=text='${escaped}':x=(w-text_w)/2:y=${subY}:fontsize=${fontSize}:fontcolor=${fontColor}:enable='between(t,${cue.start},${cue.end})'`;
+                            if (bgColor) dt += `:box=1:boxcolor=${bgColor}:boxborderw=8`;
+                            dt += `[${subLabel}]`;
+                            filters.push(dt);
+                            stream = `[${subLabel}]`;
+                            labelCounter++;
+                        }
+                    }
+                }
             } else if (block.type === 'text') {
                 const escaped = (block.text || '').replace(/:/g, '\\:').replace(/'/g, '');
                 const { start, duration: dur, x = 0, y = 0, fontSize = 24, color = 'white', backgroundColor } = block;
@@ -189,8 +435,9 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
                 dt += `[${label}]`;
                 filters.push(dt);
                 stream = `[${label}]`;
+                labelCounter++;
             }
-        });
+        }
 
         // output
         const outName = `render_${jobId}.mp4`;
@@ -209,8 +456,6 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
                 ])
                 .output(outPath)
                 .on('progress', (progress) => {
-                    // Update job progress
-                    // progress.percent is not always reliable with complex filters, but we use what we can
                     if (progress.percent) {
                         job.progress = Math.min(Math.round(progress.percent), 99);
                     }
@@ -232,6 +477,13 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
         console.error('Render job error:', err);
         job.status = 'failed';
         job.error = err.message || 'Unknown error';
+    } finally {
+        // Cleanup temp files
+        for (const tmpFile of tempFiles) {
+            try {
+                if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
+            } catch { /* ignore cleanup errors */ }
+        }
     }
 };
 
