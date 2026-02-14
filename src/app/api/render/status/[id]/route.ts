@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-export const runtime = 'nodejs';
+export const runtime = 'edge'; // Cloudflare Pages requires edge runtime
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
     try {

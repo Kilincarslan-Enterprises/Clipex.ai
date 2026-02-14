@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-export const runtime = 'nodejs'; // Node.js runtime for better compatibility
+export const runtime = 'edge'; // Cloudflare Pages requires edge runtime
 
 export async function POST(req: Request) {
     try {
