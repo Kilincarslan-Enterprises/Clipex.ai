@@ -427,7 +427,15 @@ function UrlPreviewThumb({ url, type }: { url: string; type: string }) {
                     alt="Preview"
                     className={`max-h-full max-w-full object-contain ${status !== 'loaded' ? 'hidden' : ''}`}
                     onLoad={() => setStatus('loaded')}
-                    onError={() => setStatus('error')}
+                    onError={(e) => {
+                        const target = e.currentTarget;
+                        if (!target.src.includes('/api/proxy-image')) {
+                            console.log('Thumbnail load failed (CORS?), retrying via proxy');
+                            target.src = `/api/proxy-image?url=${encodeURIComponent(url)}`;
+                        } else {
+                            setStatus('error');
+                        }
+                    }}
                     crossOrigin="anonymous"
                 />
             </div>
@@ -447,7 +455,15 @@ function UrlPreviewThumb({ url, type }: { url: string; type: string }) {
                     src={url}
                     className={`max-h-full max-w-full object-contain ${status !== 'loaded' ? 'hidden' : ''}`}
                     onLoadedData={() => setStatus('loaded')}
-                    onError={() => setStatus('error')}
+                    onError={(e) => {
+                        const target = e.currentTarget;
+                        if (!target.src.includes('/api/proxy-image')) {
+                            console.log('Video thumbnail failed (CORS?), retrying via proxy');
+                            target.src = `/api/proxy-image?url=${encodeURIComponent(url)}`;
+                        } else {
+                            setStatus('error');
+                        }
+                    }}
                     muted
                     crossOrigin="anonymous"
                 />
