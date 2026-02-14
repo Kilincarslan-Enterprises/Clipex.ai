@@ -16,6 +16,12 @@ if (ffmpegStatic) ffmpeg.setFfmpegPath(ffmpegStatic);
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
 
+// Logging Middleware
+app.use((req, _res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    next();
+});
+
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
 app.use(express.json({ limit: '50mb' }));
 

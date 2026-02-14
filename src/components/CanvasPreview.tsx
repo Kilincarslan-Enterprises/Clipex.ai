@@ -50,8 +50,21 @@ export function CanvasPreview() {
         return text;
     };
 
-    const handleImageError = useCallback((blockId: string) => {
-        setLoadErrors(prev => ({ ...prev, [blockId]: true }));
+    const handleMediaError = useCallback((e: any, sourceUrl: string | null) => {
+        const target = e.currentTarget;
+        const currentSrc = target.src;
+
+        // If it's a valid remote URL and we haven't already retried via proxy
+        if (sourceUrl && (sourceUrl.startsWith('http') || sourceUrl.startsWith('https')) && !currentSrc.includes('/api/proxy-image')) {
+            console.log(`Media load failed (CORS?), retrying via proxy: ${sourceUrl}`);
+            const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(sourceUrl)}`;
+            target.src = proxyUrl;
+        } else {
+            // Already tried proxy or not a remote URL
+            if (target.tagName === 'IMG') {
+                setLoadErrors(prev => ({ ...prev, [target.id]: true }));
+            }
+        }
     }, []);
 
     const handleImageLoad = useCallback((blockId: string) => {
@@ -123,6 +136,7 @@ export function CanvasPreview() {
                                 muted
                                 playsInline
                                 crossOrigin="anonymous"
+                                onError={(e) => handleMediaError(e, sourceUrl)}
                             />
                         </div>
                     );
@@ -139,11 +153,12 @@ export function CanvasPreview() {
                             ) : (
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img
+                                    id={block.id}
                                     src={sourceUrl}
                                     alt=""
                                     className="w-full h-full object-cover"
                                     crossOrigin="anonymous"
-                                    onError={() => handleImageError(block.id)}
+                                    onError={(e) => handleMediaError(e, sourceUrl)}
                                     onLoad={() => handleImageLoad(block.id)}
                                 />
                             )}
