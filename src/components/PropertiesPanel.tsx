@@ -1,8 +1,9 @@
 'use client';
 
 import { useStore } from '@/lib/store';
-import { Trash2, Volume2 } from 'lucide-react';
+import { Trash2, Volume2, Loader2 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
+import { useState, useEffect } from 'react';
 
 export function PropertiesPanel() {
     const {
@@ -10,7 +11,6 @@ export function PropertiesPanel() {
         template,
         updateBlock,
         removeBlock,
-        assets,
         placeholders,
         setPlaceholder
     } = useStore();
@@ -25,10 +25,6 @@ export function PropertiesPanel() {
         );
     }
 
-    const handlePlaceholderAssignment = (placeholderName: string, assetId: string) => {
-        setPlaceholder(placeholderName, assetId === '' ? null : assetId);
-    };
-
     const isPlaceholderSource = selectedBlock.source?.match(/^{{(.+)}}$/);
     const placeholderName = isPlaceholderSource ? isPlaceholderSource[1] : null;
 
@@ -38,17 +34,13 @@ export function PropertiesPanel() {
             const pName = `${selectedBlock.type}_${shortId}`;
             updateBlock(selectedBlock.id, { source: `{{${pName}}}` });
         } else {
+            // Convert back to direct URL
             if (placeholderName) {
-                const assetId = placeholders[placeholderName];
-                if (assetId) {
-                    const asset = assets.find(a => a.id === assetId);
-                    if (asset) {
-                        updateBlock(selectedBlock.id, { source: asset.url });
-                        return;
-                    }
-                }
+                const url = placeholders[placeholderName];
+                updateBlock(selectedBlock.id, { source: url || '' });
+            } else {
+                updateBlock(selectedBlock.id, { source: '' });
             }
-            updateBlock(selectedBlock.id, { source: '' });
         }
     };
 
@@ -178,28 +170,37 @@ export function PropertiesPanel() {
                                 onChange={(e) => toggleDynamic(e.target.checked)}
                                 className="rounded bg-neutral-800 border-neutral-700 text-blue-600 focus:ring-blue-500"
                             />
-                            <label htmlFor="dynamic-check" className="text-sm text-neutral-300 font-medium">Dynamic Asset</label>
+                            <label htmlFor="dynamic-check" className="text-sm text-neutral-300 font-medium">Dynamic (API Placeholder)</label>
                         </div>
 
                         {placeholderName ? (
-                            <div className="bg-neutral-800/50 p-3 rounded border border-blue-900/30">
-                                <label className="text-xs text-blue-400 uppercase font-bold mb-2 block">
-                                    Assign {placeholderName}
-                                </label>
-                                <select
-                                    className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-sm text-neutral-300 focus:ring-1 focus:ring-blue-500 outline-none"
-                                    value={placeholders[placeholderName] || ''}
-                                    onChange={(e) => handlePlaceholderAssignment(placeholderName, e.target.value)}
-                                >
-                                    <option value="">-- Select Asset --</option>
-                                    {assets
-                                        .filter(a => selectedBlock.type === 'video' ? a.type === 'video' : a.type !== 'audio')
-                                        .map(asset => (
-                                            <option key={asset.id} value={asset.id}>
-                                                {asset.name}
-                                            </option>
-                                        ))}
-                                </select>
+                            <div className="bg-neutral-800/50 p-3 rounded border border-blue-900/30 space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-xs text-blue-400 uppercase font-bold">
+                                        {`{{${placeholderName}}}`}
+                                    </label>
+                                    <span className="text-[10px] text-neutral-600 font-mono">Placeholder Key</span>
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-xs text-neutral-500 uppercase">Preview URL</label>
+                                    <input
+                                        type="text"
+                                        value={placeholders[placeholderName] || ''}
+                                        onChange={(e) => setPlaceholder(placeholderName, e.target.value || null)}
+                                        placeholder={`https://example.com/${selectedBlock.type === 'video' ? 'video.mp4' : 'image.jpg'}`}
+                                        className="bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-sm text-neutral-200 focus:ring-1 focus:ring-blue-500 outline-none"
+                                    />
+                                    <span className="text-[10px] text-neutral-600">
+                                        Paste a URL to preview. This value will be overridden by the API at render time.
+                                    </span>
+                                </div>
+                                {/* Preview thumbnail */}
+                                {placeholders[placeholderName] && selectedBlock.type === 'image' && (
+                                    <UrlPreviewThumb url={placeholders[placeholderName]!} type="image" />
+                                )}
+                                {placeholders[placeholderName] && selectedBlock.type === 'video' && (
+                                    <UrlPreviewThumb url={placeholders[placeholderName]!} type="video" />
+                                )}
                             </div>
                         ) : (
                             <div className="flex flex-col gap-1">
@@ -208,9 +209,13 @@ export function PropertiesPanel() {
                                     type="text"
                                     value={selectedBlock.source || ''}
                                     onChange={(e) => updateBlock(selectedBlock.id, { source: e.target.value })}
-                                    placeholder="https://bucket.example.com/video.mp4"
+                                    placeholder={`https://bucket.example.com/${selectedBlock.type === 'video' ? 'video.mp4' : 'image.jpg'}`}
                                     className="bg-neutral-800 border-none rounded px-2 py-1 text-sm text-neutral-200 focus:ring-1 focus:ring-blue-500 outline-none"
                                 />
+                                {/* Preview thumbnail for direct URL */}
+                                {selectedBlock.source && (selectedBlock.source.startsWith('http://') || selectedBlock.source.startsWith('https://')) && (
+                                    <UrlPreviewThumb url={selectedBlock.source} type={selectedBlock.type} />
+                                )}
                             </div>
                         )}
 
@@ -318,26 +323,28 @@ export function PropertiesPanel() {
                             <label htmlFor="loop-check" className="text-sm text-neutral-300 font-medium">Loop Audio</label>
                         </div>
 
-                        {/* Placeholder Assignment for Audio */}
+                        {/* Placeholder URL for Audio */}
                         {placeholderName && (
-                            <div className="bg-neutral-800/50 p-3 rounded border border-purple-900/30">
-                                <label className="text-xs text-purple-400 uppercase font-bold mb-2 block">
-                                    Assign {placeholderName}
-                                </label>
-                                <select
-                                    className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-sm text-neutral-300 focus:ring-1 focus:ring-purple-500 outline-none"
-                                    value={placeholders[placeholderName] || ''}
-                                    onChange={(e) => handlePlaceholderAssignment(placeholderName, e.target.value)}
-                                >
-                                    <option value="">-- Select Asset --</option>
-                                    {assets
-                                        .filter(a => a.type === 'audio')
-                                        .map(asset => (
-                                            <option key={asset.id} value={asset.id}>
-                                                {asset.name}
-                                            </option>
-                                        ))}
-                                </select>
+                            <div className="bg-neutral-800/50 p-3 rounded border border-purple-900/30 space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-xs text-purple-400 uppercase font-bold">
+                                        {`{{${placeholderName}}}`}
+                                    </label>
+                                    <span className="text-[10px] text-neutral-600 font-mono">Placeholder Key</span>
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-xs text-neutral-500 uppercase">Preview URL</label>
+                                    <input
+                                        type="text"
+                                        value={placeholders[placeholderName] || ''}
+                                        onChange={(e) => setPlaceholder(placeholderName, e.target.value || null)}
+                                        placeholder="https://example.com/audio.mp3"
+                                        className="bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-sm text-neutral-300 focus:ring-1 focus:ring-purple-500 outline-none"
+                                    />
+                                    <span className="text-[10px] text-neutral-600">
+                                        Paste a URL to preview. Overridden by API at render time.
+                                    </span>
+                                </div>
                             </div>
                         )}
                     </div>
@@ -395,4 +402,58 @@ export function PropertiesPanel() {
             </div>
         </div>
     );
+}
+
+// ── Small preview widget for URLs ──
+function UrlPreviewThumb({ url, type }: { url: string; type: string }) {
+    const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
+
+    useEffect(() => {
+        setStatus('loading');
+    }, [url]);
+
+    if (type === 'image') {
+        return (
+            <div className="mt-1 rounded overflow-hidden border border-neutral-700 bg-black h-20 flex items-center justify-center">
+                {status === 'loading' && (
+                    <Loader2 size={14} className="animate-spin text-neutral-600" />
+                )}
+                {status === 'error' && (
+                    <span className="text-xs text-red-400">Failed to load</span>
+                )}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                    src={url}
+                    alt="Preview"
+                    className={`max-h-full max-w-full object-contain ${status !== 'loaded' ? 'hidden' : ''}`}
+                    onLoad={() => setStatus('loaded')}
+                    onError={() => setStatus('error')}
+                    crossOrigin="anonymous"
+                />
+            </div>
+        );
+    }
+
+    if (type === 'video') {
+        return (
+            <div className="mt-1 rounded overflow-hidden border border-neutral-700 bg-black h-20 flex items-center justify-center">
+                {status === 'loading' && (
+                    <Loader2 size={14} className="animate-spin text-neutral-600" />
+                )}
+                {status === 'error' && (
+                    <span className="text-xs text-red-400">Failed to load</span>
+                )}
+                <video
+                    src={url}
+                    className={`max-h-full max-w-full object-contain ${status !== 'loaded' ? 'hidden' : ''}`}
+                    onLoadedData={() => setStatus('loaded')}
+                    onError={() => setStatus('error')}
+                    muted
+                    crossOrigin="anonymous"
+                />
+            </div>
+        );
+    }
+
+    return null;
 }

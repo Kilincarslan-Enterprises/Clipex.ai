@@ -15,7 +15,7 @@ export async function POST(req: Request) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                // Explicitly not forwarding all headers to avoid 403/CSRF issues from destination
+                'User-Agent': 'Clipex-Frontend/1.0',
             },
             body: JSON.stringify(body),
         });
