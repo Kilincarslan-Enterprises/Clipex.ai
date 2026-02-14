@@ -1,25 +1,63 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { CanvasPreview } from './CanvasPreview';
 import { Timeline } from './Timeline';
 import { JsonEditor } from './JsonEditor';
 import { useStore } from '@/lib/store';
-import { Asset, Block } from '@/types';
+import { Block } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
-import { Code, Layers, Video, Loader2, ArrowLeft } from 'lucide-react';
+import { Code, Layers, Video, Loader2, ArrowLeft, Wifi, WifiOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
+
+interface HealthStatus {
+    connected: boolean;
+    latency?: number;
+    error?: string;
+    renderServiceUrl?: string;
+    checkedAt: string;
+}
 
 export function EditorPanel() {
     const [viewMode, setViewMode] = useState<'visual' | 'json' | 'render'>('visual');
     const [isRendering, setIsRendering] = useState(false);
     const [renderUrl, setRenderUrl] = useState<string | null>(null);
+    const [health, setHealth] = useState<HealthStatus | null>(null);
+    const [healthChecking, setHealthChecking] = useState(false);
     const router = useRouter();
 
-    const { addBlock, currentTime, setPlaceholder, template, assets, placeholders } = useStore();
+    const { addBlock, currentTime, template, placeholders } = useStore();
 
     const [renderProgress, setRenderProgress] = useState(0);
+
+    // Check health on mount
+    useEffect(() => {
+        checkHealth();
+    }, []);
+
+    const checkHealth = async () => {
+        setHealthChecking(true);
+        try {
+            const res = await fetch('/api/system/health');
+            const data = await res.json();
+            setHealth({
+                connected: data.connected,
+                latency: data.latency,
+                error: data.error,
+                renderServiceUrl: data.renderServiceUrl,
+                checkedAt: new Date().toISOString(),
+            });
+        } catch (err: any) {
+            setHealth({
+                connected: false,
+                error: err.message || 'Network error',
+                checkedAt: new Date().toISOString(),
+            });
+        } finally {
+            setHealthChecking(false);
+        }
+    };
 
     const handleRender = async () => {
         setIsRendering(true);
@@ -33,12 +71,15 @@ export function EditorPanel() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     template,
-                    assets,
+                    assets: [], // No longer sending local assets
                     placeholders
                 })
             });
 
-            if (!startResponse.ok) throw new Error('Failed to start render');
+            if (!startResponse.ok) {
+                const errorData = await startResponse.json().catch(() => ({}));
+                throw new Error(errorData.details || errorData.error || `HTTP ${startResponse.status}`);
+            }
             const { jobId } = await startResponse.json();
 
             // Poll Status
@@ -102,28 +143,6 @@ export function EditorPanel() {
                     source: blockType === 'text' ? undefined : '',
                 };
                 addBlock(newBlock);
-            } else if (parsed.type === 'asset') {
-                const asset = parsed.payload as Asset;
-                const shortId = uuidv4().slice(0, 8);
-                const placeholderName = `${asset.type}_${shortId}`;
-
-                setPlaceholder(placeholderName, asset.id);
-
-                const newBlock: Block = {
-                    id: uuidv4(),
-                    type: asset.type === 'audio' ? 'audio' : asset.type === 'video' ? 'video' : 'image',
-                    track: 0,
-                    start: currentTime,
-                    duration: asset.type === 'video' ? 5 : asset.type === 'audio' ? 5 : 3,
-                    source: `{{${placeholderName}}}`,
-                    x: 0,
-                    y: 0,
-                    width: 0,
-                    height: 0,
-                    ...(asset.type === 'audio' ? { volume: 100, loop: false } : {}),
-                };
-
-                addBlock(newBlock);
             }
         } catch (err) {
             console.error('Drop error', err);
@@ -132,6 +151,47 @@ export function EditorPanel() {
 
     const handleDragOver = (e: React.DragEvent) => {
         e.preventDefault();
+    };
+
+    // Health status dot
+    const HealthDot = () => {
+        if (healthChecking) {
+            return (
+                <button
+                    className="flex items-center gap-1.5 px-2 py-1 rounded text-xs text-neutral-400 bg-neutral-800/50"
+                    title="Checking connection..."
+                >
+                    <Loader2 size={12} className="animate-spin" />
+                    <span className="hidden sm:inline">Checking...</span>
+                </button>
+            );
+        }
+
+        if (!health) return null;
+
+        if (health.connected) {
+            return (
+                <button
+                    onClick={checkHealth}
+                    className="flex items-center gap-1.5 px-2 py-1 rounded text-xs text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors"
+                    title={`Connected to render service (${health.latency}ms)\n${health.renderServiceUrl || ''}\nClick to re-check`}
+                >
+                    <Wifi size={12} />
+                    <span className="hidden sm:inline">{health.latency}ms</span>
+                </button>
+            );
+        }
+
+        return (
+            <button
+                onClick={checkHealth}
+                className="flex items-center gap-1.5 px-2 py-1 rounded text-xs text-red-400 bg-red-500/10 hover:bg-red-500/20 transition-colors"
+                title={`Render service offline: ${health.error || 'Unknown error'}\n${health.renderServiceUrl || ''}\nClick to retry`}
+            >
+                <WifiOff size={12} />
+                <span className="hidden sm:inline">Offline</span>
+            </button>
+        );
     };
 
     return (
@@ -168,14 +228,17 @@ export function EditorPanel() {
                     </button>
                 </div>
 
-                <button
-                    onClick={handleRender}
-                    disabled={isRendering}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded text-sm font-medium flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                    {isRendering ? <Loader2 size={14} className="animate-spin" /> : <Video size={14} />}
-                    {isRendering ? `Rendering ${renderProgress}%...` : 'Render Video'}
-                </button>
+                <div className="flex items-center gap-2">
+                    <HealthDot />
+                    <button
+                        onClick={handleRender}
+                        disabled={isRendering || (health !== null && !health.connected)}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded text-sm font-medium flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {isRendering ? <Loader2 size={14} className="animate-spin" /> : <Video size={14} />}
+                        {isRendering ? `Rendering ${renderProgress}%...` : 'Render Video'}
+                    </button>
+                </div>
             </div>
 
             {/* Content Area */}

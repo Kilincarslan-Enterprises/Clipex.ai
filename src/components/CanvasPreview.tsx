@@ -1,12 +1,12 @@
 'use client';
 
 import { useStore } from '@/lib/store';
-import { Block } from '@/types';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 
 export function CanvasPreview() {
-    const { template, currentTime, placeholders, assets, isPlaying, setCurrentTime } = useStore();
+    const { template, currentTime, placeholders, isPlaying, setCurrentTime } = useStore();
     const canvasRef = useRef<HTMLDivElement>(null);
+    const [loadErrors, setLoadErrors] = useState<Record<string, boolean>>({});
 
     // Simple playback loop
     useEffect(() => {
@@ -23,32 +23,47 @@ export function CanvasPreview() {
         return () => clearInterval(interval);
     }, [isPlaying, template.canvas.fps]); // removed currentTime dependency to avoid loop drift/re-render spam
 
-
-    const resolveSource = (source?: string) => {
+    const resolveSource = useCallback((source?: string) => {
         if (!source) return null;
 
-        // Check for placeholder
+        // Check for placeholder {{key}}
         const match = source.match(/^{{(.+)}}$/);
         if (match) {
-            const placeholderName = match[1]; // e.g., video_1
-            const assetId = placeholders[placeholderName]; // might be null or undefined
-            if (assetId) {
-                const asset = assets.find(a => a.id === assetId);
-                return asset ? asset.url : null;
-            }
-            return null; // Placeholder not assigned
+            const placeholderName = match[1];
+            const url = placeholders[placeholderName];
+            return url || null; // url is now a direct URL string
         }
 
-        // Direct URL (if supported later)
+        // Direct URL
+        if (source.startsWith('http://') || source.startsWith('https://')) {
+            return source;
+        }
+
+        // Empty or invalid
+        if (source.trim() === '') return null;
+
         return source;
-    };
+    }, [placeholders]);
 
     const resolveText = (text?: string) => {
         if (!text) return '';
-        // Could also resolve text placeholders later
-        // e.g. {{text_1}}
         return text;
     };
+
+    const handleImageError = useCallback((blockId: string) => {
+        setLoadErrors(prev => ({ ...prev, [blockId]: true }));
+    }, []);
+
+    const handleImageLoad = useCallback((blockId: string) => {
+        setLoadErrors(prev => {
+            if (prev[blockId]) {
+                const next = { ...prev };
+                delete next[blockId];
+                return next;
+            }
+            return prev;
+        });
+    }, []);
 
     const visibleBlocks = template.timeline.filter(
         (block) => currentTime >= block.start && currentTime < block.start + block.duration
@@ -83,7 +98,7 @@ export function CanvasPreview() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    pointerEvents: 'none', // For now, no direct manipulation on canvas
+                    pointerEvents: 'none',
                 };
 
                 if (block.type === 'video' && sourceUrl) {
@@ -92,7 +107,6 @@ export function CanvasPreview() {
                             <video
                                 src={sourceUrl}
                                 className="w-full h-full object-cover"
-                                // Sync video time
                                 ref={(el) => {
                                     if (el) {
                                         const relativeTime = currentTime - block.start;
@@ -106,17 +120,33 @@ export function CanvasPreview() {
                                         }
                                     }
                                 }}
-                                muted // Mute for preview to avoid chaos
+                                muted
                                 playsInline
+                                crossOrigin="anonymous"
                             />
                         </div>
-                    )
+                    );
                 }
 
                 if (block.type === 'image' && sourceUrl) {
                     return (
                         <div key={block.id} style={style}>
-                            <img src={sourceUrl} className="w-full h-full object-cover" />
+                            {loadErrors[block.id] ? (
+                                <div className="flex flex-col items-center gap-1 text-red-400 text-xs">
+                                    <span>⚠ Failed to load</span>
+                                    <span className="text-neutral-600 text-[10px] max-w-[160px] truncate">{sourceUrl}</span>
+                                </div>
+                            ) : (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                    src={sourceUrl}
+                                    alt=""
+                                    className="w-full h-full object-cover"
+                                    crossOrigin="anonymous"
+                                    onError={() => handleImageError(block.id)}
+                                    onLoad={() => handleImageLoad(block.id)}
+                                />
+                            )}
                         </div>
                     );
                 }
@@ -129,10 +159,13 @@ export function CanvasPreview() {
                     );
                 }
 
-                // Fallback for missing source
+                // Fallback: placeholder without source assigned
                 return (
-                    <div key={block.id} style={{ ...style, border: '1px dashed red' }}>
-                        Missing Source: {block.source}
+                    <div key={block.id} style={{ ...style, border: '1px dashed rgba(255,255,255,0.2)' }}>
+                        <div className="flex flex-col items-center gap-1 text-neutral-500 text-xs">
+                            <span className="text-lg">🖼</span>
+                            <span>No source URL</span>
+                        </div>
                     </div>
                 );
 

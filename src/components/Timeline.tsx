@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { useRef, MouseEvent } from 'react';
 import { Play, Pause } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
-import { Asset, Block, BlockType } from '@/types';
+import { Block, BlockType } from '@/types';
 
 const PIXELS_PER_SECOND = 40;
 const RULER_INTERVAL = 5; // seconds
@@ -27,7 +27,6 @@ export function Timeline() {
         selectedBlockId,
         selectBlock,
         addBlock,
-        setPlaceholder
     } = useStore();
 
     const timelineRef = useRef<HTMLDivElement>(null);
@@ -77,29 +76,6 @@ export function Timeline() {
                     ...(blockType === 'text' ? { text: 'Your Text Here', fontSize: 48, color: '#ffffff' } : {}),
                     ...(blockType === 'audio' ? { volume: 100, loop: false } : {}),
                     source: blockType === 'text' ? undefined : '',
-                };
-                addBlock(newBlock);
-            } else if (parsed.type === 'asset') {
-                // Uploaded asset
-                const asset = parsed.payload as Asset;
-                const shortId = uuidv4().slice(0, 8);
-                const placeholderName = `${asset.type}_${shortId}`;
-
-                setPlaceholder(placeholderName, asset.id);
-
-                const duration = asset.type === 'video' ? 5 : asset.type === 'audio' ? 5 : 3;
-                const newBlock: Block = {
-                    id: uuidv4(),
-                    type: asset.type === 'audio' ? 'audio' : asset.type === 'video' ? 'video' : 'image',
-                    track: track,
-                    start: time,
-                    duration: duration,
-                    source: `{{${placeholderName}}}`,
-                    x: 0,
-                    y: 0,
-                    width: 0,
-                    height: 0,
-                    ...(asset.type === 'audio' ? { volume: 100, loop: false } : {}),
                 };
                 addBlock(newBlock);
             }
