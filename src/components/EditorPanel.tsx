@@ -36,6 +36,7 @@ export function EditorPanel() {
 
     // Check health on mount
     useEffect(() => {
+        console.log('Using Render URL:', RENDER_URL);
         checkHealth();
     }, []);
 
