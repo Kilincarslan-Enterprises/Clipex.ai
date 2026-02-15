@@ -10,7 +10,11 @@ import https from 'https';
 import http from 'http';
 
 // ── FFmpeg ──────────────────────────────────────────────
-if (ffmpegStatic) ffmpeg.setFfmpegPath(ffmpegStatic);
+// In production (Docker), we use the system ffmpeg (apk add ffmpeg) which has full support.
+// largely because ffmpeg-static binaries may have issues on Alpine or miss filters.
+if (process.env.NODE_ENV !== 'production' && ffmpegStatic) {
+    ffmpeg.setFfmpegPath(ffmpegStatic);
+}
 
 // ── Express ─────────────────────────────────────────────
 const app = express();
