@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
+import { RENDER_SERVICE_URL } from '@/lib/render-config';
 
 export const runtime = 'edge'; // Cloudflare Pages requires edge runtime
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
         const { id } = await params;
-        const RENDER_SERVICE_URL = process.env.RENDER_SERVICE_URL || 'http://localhost:3001';
 
         console.log(`Checking render status for jobId: ${id} at ${RENDER_SERVICE_URL}/status/${id}`);
 
