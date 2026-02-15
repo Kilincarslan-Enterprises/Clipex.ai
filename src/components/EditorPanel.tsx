@@ -31,6 +31,9 @@ export function EditorPanel() {
 
     const [renderProgress, setRenderProgress] = useState(0);
 
+    // Direct URL to the render service (bypasses broken Cloudflare Pages API routes)
+    const RENDER_URL = process.env.NEXT_PUBLIC_RENDER_API_URL || 'http://localhost:3001';
+
     // Check health on mount
     useEffect(() => {
         checkHealth();
@@ -38,20 +41,25 @@ export function EditorPanel() {
 
     const checkHealth = async () => {
         setHealthChecking(true);
+        const start = Date.now();
         try {
-            const res = await fetch('/api/system/health');
-            const data = await res.json();
+            const res = await fetch(`${RENDER_URL}/health`, {
+                signal: AbortSignal.timeout(10000),
+            });
+            const latency = Date.now() - start;
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            await res.json(); // validate JSON response
             setHealth({
-                connected: data.connected,
-                latency: data.latency,
-                error: data.error,
-                renderServiceUrl: data.renderServiceUrl,
+                connected: true,
+                latency,
+                renderServiceUrl: RENDER_URL,
                 checkedAt: new Date().toISOString(),
             });
         } catch (err: any) {
             setHealth({
                 connected: false,
                 error: err.message || 'Network error',
+                renderServiceUrl: RENDER_URL,
                 checkedAt: new Date().toISOString(),
             });
         } finally {
@@ -66,7 +74,7 @@ export function EditorPanel() {
 
         try {
             // Start Job
-            const startResponse = await fetch('/api/render', {
+            const startResponse = await fetch(`${RENDER_URL}/render`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -85,7 +93,7 @@ export function EditorPanel() {
             // Poll Status
             const pollInterval = setInterval(async () => {
                 try {
-                    const statusRes = await fetch(`/api/render/status/${jobId}`);
+                    const statusRes = await fetch(`${RENDER_URL}/status/${jobId}`);
                     if (!statusRes.ok) throw new Error('Status check failed');
 
                     const statusData = await statusRes.json();
