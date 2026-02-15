@@ -3,7 +3,10 @@ import { NextResponse } from 'next/server';
 export const runtime = 'edge';
 
 export async function GET() {
-    const RENDER_SERVICE_URL = process.env.RENDER_SERVICE_URL || 'http://localhost:3001';
+    // Check both server-side and public environment variables
+    const RENDER_SERVICE_URL = process.env.RENDER_SERVICE_URL ||
+        process.env.NEXT_PUBLIC_RENDER_API_URL ||
+        'http://localhost:3001';
 
     const start = Date.now();
 
