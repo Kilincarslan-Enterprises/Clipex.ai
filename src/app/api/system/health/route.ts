@@ -1,12 +1,9 @@
 import { NextResponse } from 'next/server';
+import { RENDER_SERVICE_URL } from '@/lib/render-config';
 
 export const runtime = 'edge';
 
 export async function GET() {
-    // Check both server-side and public environment variables
-    const RENDER_SERVICE_URL = process.env.RENDER_SERVICE_URL ||
-        process.env.NEXT_PUBLIC_RENDER_API_URL ||
-        'http://localhost:3001';
 
     const start = Date.now();
 

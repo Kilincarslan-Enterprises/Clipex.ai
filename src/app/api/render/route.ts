@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { RENDER_SERVICE_URL } from '@/lib/render-config';
 
 export const runtime = 'edge'; // Cloudflare Pages requires edge runtime
 
@@ -7,7 +8,6 @@ export async function POST(req: Request) {
         const body = await req.json();
 
         // Forward to Render Service
-        const RENDER_SERVICE_URL = process.env.RENDER_SERVICE_URL || 'http://localhost:3001';
 
         console.log(`Forwarding render request to: ${RENDER_SERVICE_URL}/render`);
 
