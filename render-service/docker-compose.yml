@@ -7,10 +7,10 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: clipex-render
-    # Keine Ports nach außen öffnen (Sicherheit!), 
-    # da der Tunnel-Container intern über das Netzwerk zugreift.
     expose:
       - "3001"
+    ports:
+      - "127.0.0.1:3001:3001"
     environment:
       - NODE_ENV=production
       - PORT=3001
