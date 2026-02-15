@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   render:
     # Da die Datei jetzt im 'render-service' Ordner liegt, ist der Context '.'

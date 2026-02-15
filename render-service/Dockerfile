@@ -1,5 +1,5 @@
 # Build stage
-FROM node:20-alpine AS builder
+FROM node:20-slim AS builder
 
 WORKDIR /app
 
@@ -13,10 +13,12 @@ COPY src ./src
 RUN npm run build
 
 # Production stage
-FROM node:20-alpine
+FROM node:20-slim
 
-# Install FFmpeg
-RUN apk add --no-cache ffmpeg
+# Install FFmpeg (Debian's ffmpeg has full lavfi / filter support)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ffmpeg wget && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -28,7 +30,7 @@ RUN npm ci --only=production
 COPY --from=builder /app/dist ./dist
 
 # Create data directories
-RUN mkdir -p data/uploads data/renders
+RUN mkdir -p data/uploads data/renders data/temp
 
 EXPOSE 3001
 
