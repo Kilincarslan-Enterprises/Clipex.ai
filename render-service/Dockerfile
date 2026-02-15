@@ -17,7 +17,7 @@ FROM node:20-slim
 
 # Install FFmpeg (Debian's ffmpeg has full lavfi / filter support)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg wget && \
+    apt-get install -y --no-install-recommends ffmpeg wget fonts-dejavu-core && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

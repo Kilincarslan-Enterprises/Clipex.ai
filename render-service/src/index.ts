@@ -16,6 +16,12 @@ if (process.env.NODE_ENV !== 'production' && ffmpegStatic) {
     ffmpeg.setFfmpegPath(ffmpegStatic);
 }
 
+// Default font path for Alpine/Debian in Docker
+// Ensure you have: apt-get install fonts-dejavu-core
+const FONT_PATH = process.env.NODE_ENV === 'production'
+    ? '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+    : undefined;
+
 // ── Express ─────────────────────────────────────────────
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
@@ -427,7 +433,8 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
                             const escaped = cue.text.replace(/:/g, '\\:').replace(/'/g, '');
                             // Center horizontally, place near bottom (80% of height)
                             const subY = Math.round(canvas.height * 0.82);
-                            let dt = `${stream}drawtext=text='${escaped}':x=(w-text_w)/2:y=${subY}:fontsize=${fontSize}:fontcolor=${fontColor}:enable='between(t,${cue.start},${cue.end})'`;
+                            const fontOpt = FONT_PATH ? `:fontfile=${FONT_PATH}` : '';
+                            let dt = `${stream}drawtext=text='${escaped}'${fontOpt}:x=(w-text_w)/2:y=${subY}:fontsize=${fontSize}:fontcolor=${fontColor}:enable='between(t,${cue.start},${cue.end})'`;
                             if (bgColor) dt += `:box=1:boxcolor=${bgColor}:boxborderw=8`;
                             dt += `[${subLabel}]`;
                             filters.push(dt);
@@ -440,7 +447,8 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
                 const escaped = (block.text || '').replace(/:/g, '\\:').replace(/'/g, '');
                 const { start, duration: dur, x = 0, y = 0, fontSize = 24, color = 'white', backgroundColor } = block;
                 const end = start + dur;
-                let dt = `${stream}drawtext=text='${escaped}':x=${x}:y=${y}:fontsize=${fontSize}:fontcolor=${color}:enable='between(t,${start},${end})'`;
+                const fontOpt = FONT_PATH ? `:fontfile=${FONT_PATH}` : '';
+                let dt = `${stream}drawtext=text='${escaped}'${fontOpt}:x=${x}:y=${y}:fontsize=${fontSize}:fontcolor=${color}:enable='between(t,${start},${end})'`;
                 if (backgroundColor) dt += `:box=1:boxcolor=${backgroundColor}`;
                 dt += `[${label}]`;
                 filters.push(dt);
@@ -465,6 +473,11 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
                     '-movflags +faststart'
                 ])
                 .output(outPath)
+                .on('start', (cmdLine: string) => {
+                    console.log(`[${jobId}] Ffmpeg spawned: ${cmdLine}`);
+                    job.progress = 1;
+                })
+
                 .on('progress', (progress) => {
                     if (progress.percent) {
                         job.progress = Math.min(Math.round(progress.percent), 99);
