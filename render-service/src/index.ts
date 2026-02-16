@@ -354,20 +354,32 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
             return null;
         };
 
+        // ─ Pre-resolve all sources (download remote assets once) ─
+        const resolvedSources = new Map<string, string | null>();
+        for (const block of activeBlocks) {
+            if ((block.type === 'video' || block.type === 'image') && block.source) {
+                if (!resolvedSources.has(block.source)) {
+                    const resolved = await resolveSource(block.source);
+                    resolvedSources.set(block.source, resolved);
+                    console.log(`[${jobId}] Resolved source "${block.source}" -> "${resolved}"`);
+                }
+            }
+        }
+
         // ─ build ffmpeg command ─
         const cmd = ffmpeg();
         const inputMap = new Map<string, number>();
         let inputIdx = 0;
 
-        // add media inputs (now async for remote downloads)
+        // add media inputs using pre-resolved paths
         for (const block of activeBlocks) {
             if (block.type !== 'video' && block.type !== 'image') continue;
-            const src = await resolveSource(block.source);
+            const src = resolvedSources.get(block.source!) ?? null;
             if (!src || inputMap.has(src)) continue;
 
             // Verify file exists
             if (!fs.existsSync(src)) {
-                console.warn(`Source file not found: ${src}`);
+                console.warn(`[${jobId}] Source file not found: ${src}`);
                 continue;
             }
 
@@ -392,7 +404,7 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
             const label = `layer${labelCounter}`;
 
             if (block.type === 'video' || block.type === 'image') {
-                const src = await resolveSource(block.source);
+                const src = resolvedSources.get(block.source!) ?? null;
                 if (!src || !inputMap.has(src)) continue;
                 const idx = inputMap.get(src)!;
                 const { start, duration: dur, x = 0, y = 0, width: w, height: h } = block;
@@ -460,6 +472,15 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
         // output
         const outName = `render_${jobId}.mp4`;
         const outPath = path.join(RENDERS_DIR, outName);
+
+        // If no filters were generated, just use the base layer directly
+        if (filters.length === 0) {
+            console.log(`[${jobId}] No overlay filters generated, using base layer directly.`);
+            filters.push(`[${baseIdx}:v]null[out]`);
+            stream = '[out]';
+        }
+
+        console.log(`[${jobId}] Filter chain (${filters.length} filters): ${JSON.stringify(filters)}`);
 
         await new Promise<void>((resolve, reject) => {
             cmd
