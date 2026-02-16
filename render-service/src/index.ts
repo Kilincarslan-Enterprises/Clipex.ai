@@ -8,6 +8,15 @@ import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
 import https from 'https';
 import http from 'http';
+import { createClient } from '@supabase/supabase-js';
+
+// ── Supabase Setup ──────────────────────────────────────
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://wqpzszingrxsjeypnwvl.supabase.co';
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndxcHpzemluZ3J4c2pleXBud3ZsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDU4ODYwMSwiZXhwIjoyMDg2MTY0NjAxfQ.yEk8SnZwzUO48JORBelPTx5zYP-YjKjXEYC7honAjtI';
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+    auth: { persistSession: false }
+});
 
 // ── FFmpeg ──────────────────────────────────────────────
 // In production (Docker), we use the system ffmpeg (apk add ffmpeg) which has full support.
@@ -55,6 +64,8 @@ interface RenderJob {
     url?: string;
     error?: string;
     createdAt: Date;
+    // Database record ID
+    dbId?: string;
 }
 
 const jobs = new Map<string, RenderJob>();
@@ -263,6 +274,10 @@ interface RenderRequest {
     template: { canvas: Canvas; timeline: Block[] };
     assets: Asset[];
     placeholders: Record<string, string | null>;
+    userId?: string;
+    templateId?: string;
+    projectId?: string;
+    source?: 'ui' | 'api';
 }
 
 // ── Render Logic ────────────────────────────────────────
@@ -275,6 +290,13 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
     try {
         job.status = 'processing';
         job.progress = 0;
+
+        // Update DB status to processing
+        if (job.dbId) {
+            await supabase.from('renders').update({
+                status: 'processing'
+            }).eq('id', job.dbId);
+        }
 
         const { template, assets, placeholders } = reqBody;
         const { canvas, timeline } = template;
@@ -504,14 +526,30 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
                         job.progress = Math.min(Math.round(progress.percent), 99);
                     }
                 })
-                .on('end', () => {
+                .on('end', async () => {
                     job.progress = 100;
                     job.status = 'completed';
                     job.url = `/renders/${outName}`;
+
+                    // Update DB status to completed
+                    if (job.dbId) {
+                        await supabase.from('renders').update({
+                            status: 'completed',
+                            output_url: job.url,
+                            resolution: `${canvas.width}x${canvas.height}`
+                        }).eq('id', job.dbId);
+                    }
                     resolve();
                 })
-                .on('error', (err) => {
+                .on('error', async (err) => {
                     console.error('FFmpeg error:', err);
+                    // Update DB status to failed
+                    if (job.dbId) {
+                        await supabase.from('renders').update({
+                            status: 'failed',
+                            error_message: err.message || 'Unknown error'
+                        }).eq('id', job.dbId);
+                    }
                     reject(err);
                 })
                 .run();
@@ -521,6 +559,15 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
         console.error('Render job error:', err);
         job.status = 'failed';
         job.error = err.message || 'Unknown error';
+
+        // Update DB status to failed (catch-all)
+        if (job.dbId) {
+            await supabase.from('renders').update({
+                status: 'failed',
+                error_message: job.error
+            }).eq('id', job.dbId);
+        }
+
     } finally {
         // Cleanup temp files
         for (const tmpFile of tempFiles) {
@@ -532,19 +579,50 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
 };
 
 // ── Render Endpoints ────────────────────────────────────
-app.post('/render', (req, res) => {
+app.post('/render', async (req, res) => {
     try {
         const jobId = uuidv4();
+        const body = req.body as RenderRequest;
+
+        // Create Database Entry
+        let dbId = undefined;
+        // Only insert if we have a userId or we want to log anonymous renders too (optional)
+        // Since the schema has user_id nullable, we can insert without it, but it's better if we have it.
+        try {
+            // If userId is provided, ensure it's a valid uuid for auth.users FK
+            // If not provided, we can either skip DB insert or insert with null user_id (if FK allows)
+            // The migration allows null user_id.
+
+            const { data: renderRow, error: dbError } = await supabase.from('renders').insert({
+                user_id: body.userId, // Can be undefined/null
+                template_id: body.templateId, // Can be undefined/null
+                project_id: body.projectId, // Can be undefined/null
+                render_job_id: jobId,
+                source: body.source || 'ui', // 'ui' or 'api'
+                status: 'pending',
+                resolution: body.template?.canvas ? `${body.template.canvas.width}x${body.template.canvas.height}` : undefined
+            }).select().single();
+
+            if (dbError) {
+                console.error('Failed to create render log in DB:', dbError);
+            } else if (renderRow) {
+                dbId = renderRow.id;
+            }
+        } catch (e) {
+            console.error('Supabase insert exception:', e);
+        }
+
         const job: RenderJob = {
             id: jobId,
             status: 'pending',
             progress: 0,
-            createdAt: new Date()
+            createdAt: new Date(),
+            dbId: dbId
         };
         jobs.set(jobId, job);
 
         // Start processing in background
-        processRender(jobId, req.body as RenderRequest);
+        processRender(jobId, body);
 
         res.json({ jobId });
     } catch (err: any) {

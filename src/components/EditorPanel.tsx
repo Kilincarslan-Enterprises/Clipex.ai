@@ -8,8 +8,9 @@ import { useStore } from '@/lib/store';
 import { Block } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 import { Code, Layers, Video, Loader2, ArrowLeft, Wifi, WifiOff } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { createClient } from '@/utils/supabase/client';
 
 interface HealthStatus {
     connected: boolean;
@@ -26,6 +27,9 @@ export function EditorPanel() {
     const [health, setHealth] = useState<HealthStatus | null>(null);
     const [healthChecking, setHealthChecking] = useState(false);
     const router = useRouter();
+    const params = useParams(); // Get projectId from URL
+    const supabase = createClient();
+    const [userId, setUserId] = useState<string | null>(null);
 
     const { addBlock, currentTime, template, placeholders } = useStore();
 
@@ -34,11 +38,17 @@ export function EditorPanel() {
     // Direct URL to the render service (bypasses broken Cloudflare Pages API routes)
     const RENDER_URL = process.env.NEXT_PUBLIC_RENDER_API_URL || 'http://localhost:3001';
 
-    // Check health on mount
+    // Check health on mount & fetch user
     useEffect(() => {
         console.log('Using Render URL:', RENDER_URL);
         checkHealth();
+        fetchUser();
     }, []);
+
+    const fetchUser = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) setUserId(user.id);
+    };
 
     const checkHealth = async () => {
         setHealthChecking(true);
@@ -81,7 +91,11 @@ export function EditorPanel() {
                 body: JSON.stringify({
                     template,
                     assets: [], // No longer sending local assets
-                    placeholders
+                    placeholders,
+                    userId: userId, // Pass current user ID
+                    templateId: params?.id as string, // Pass current project/template ID
+                    projectId: params?.id as string, // Currently project = template
+                    source: 'ui'
                 })
             });
 
@@ -203,10 +217,14 @@ export function EditorPanel() {
         );
     };
 
+    const handleDownload = () => {
+        if (!renderUrl) return;
+        const fullUrl = renderUrl.startsWith('http') ? renderUrl : `${RENDER_URL}${renderUrl}`;
+        window.open(fullUrl, '_blank');
+    };
+
     return (
-        <div
-            className="flex-1 flex flex-col min-w-0 bg-neutral-950 h-full relative"
-        >
+        <div className="flex-1 flex flex-col min-w-0 bg-neutral-950 h-full relative">
             {/* Toggle Bar */}
             <div className="flex h-12 items-center justify-between px-4 bg-neutral-900 border-b border-neutral-800 shrink-0">
                 <div className="flex items-center gap-2">
@@ -242,7 +260,7 @@ export function EditorPanel() {
                     <button
                         onClick={handleRender}
                         disabled={isRendering || (health !== null && !health.connected)}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded text-sm font-medium flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded text-sm font-medium flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-900/20"
                     >
                         {isRendering ? <Loader2 size={14} className="animate-spin" /> : <Video size={14} />}
                         {isRendering ? `Rendering ${renderProgress}%...` : 'Render Video'}
@@ -254,9 +272,29 @@ export function EditorPanel() {
             <div className="flex-1 overflow-hidden relative flex flex-col">
                 {viewMode === 'render' && renderUrl ? (
                     <div className="flex-1 flex flex-col items-center justify-center bg-neutral-950 p-8 gap-4">
-                        <h2 className="text-xl font-bold text-neutral-200">Rendered Output</h2>
-                        <video src={renderUrl} controls className="max-h-[80%] max-w-full shadow-2xl bg-black rounded" />
-                        <a href={renderUrl} download className="text-blue-400 hover:underline text-sm">Download Video</a>
+                        <h2 className="text-xl font-bold text-neutral-200">Render Completed</h2>
+                        <div className="bg-neutral-900 p-2 rounded-lg border border-neutral-800 shadow-2xl">
+                            <video
+                                src={renderUrl.startsWith('http') ? renderUrl : `${RENDER_URL}${renderUrl}`}
+                                controls
+                                className="max-h-[60vh] max-w-full bg-black rounded"
+                            />
+                        </div>
+                        <div className="flex gap-4 mt-4">
+                            <button
+                                onClick={handleDownload}
+                                className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium transition-colors shadow-lg shadow-blue-900/20 flex items-center gap-2"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" x2="12" y1="15" y2="3" /></svg>
+                                Download Video
+                            </button>
+                            <button
+                                onClick={() => setViewMode('visual')}
+                                className="px-6 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg font-medium transition-colors"
+                            >
+                                Back to Editor
+                            </button>
+                        </div>
                     </div>
                 ) : viewMode === 'visual' ? (
                     <>
