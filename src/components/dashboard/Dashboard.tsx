@@ -2,15 +2,25 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { TemplateRow, RenderRow } from '@/types/db';
+import { RenderRow } from '@/types/db';
 import {
     LayoutTemplate, ScrollText, Plus, Pencil, Check, X, Trash2,
     Film, Loader2, Download, ChevronDown, ChevronUp, Clock,
     CheckCircle2, XCircle, AlertCircle, ExternalLink, Copy
 } from 'lucide-react';
 
+// Using ProjectRow structure but calling them "Templates" in UI
+interface ProjectRow {
+    id: string;
+    name: string;
+    data: any;
+    user_id?: string;
+    created_at: string;
+    updated_at: string;
+}
+
 // ═══════════════════════════════════════════════════════════
-// Templates Tab
+// Templates Tab (Uses 'projects' table)
 // ═══════════════════════════════════════════════════════════
 function TemplatesView({
     user,
@@ -20,7 +30,7 @@ function TemplatesView({
     onOpenEditor: (projectId: string) => void;
 }) {
     const supabase = createClient();
-    const [templates, setTemplates] = useState<TemplateRow[]>([]);
+    const [projects, setProjects] = useState<ProjectRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [creating, setCreating] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -28,7 +38,7 @@ function TemplatesView({
     const editRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
-        fetchTemplates();
+        fetchProjects();
     }, []);
 
     useEffect(() => {
@@ -38,14 +48,14 @@ function TemplatesView({
         }
     }, [editingId]);
 
-    const fetchTemplates = async () => {
+    const fetchProjects = async () => {
         setLoading(true);
         const { data, error } = await supabase
-            .from('templates')
+            .from('projects')
             .select('*')
             .order('updated_at', { ascending: false });
 
-        if (!error) setTemplates(data || []);
+        if (!error) setProjects(data || []);
         setLoading(false);
     };
 
@@ -54,29 +64,22 @@ function TemplatesView({
         setCreating(true);
 
         const { data, error } = await supabase
-            .from('templates')
+            .from('projects')
             .insert({
                 name: `Template ${new Date().toLocaleTimeString()}`,
                 user_id: user.id,
                 data: {
                     canvas: { width: 1080, height: 1920, fps: 30 },
                     timeline: [],
+                    assets: [],
+                    placeholders: {}
                 },
             })
             .select()
             .single();
 
         if (!error && data) {
-            // Also create a matching project so the editor works
-            const { error: projErr } = await supabase.from('projects').insert({
-                id: data.id,
-                name: data.name,
-                user_id: user.id,
-                data: data.data,
-            });
-            if (!projErr) {
-                onOpenEditor(data.id);
-            }
+            onOpenEditor(data.id);
         }
         setCreating(false);
     };
@@ -84,27 +87,23 @@ function TemplatesView({
     const handleRename = async (id: string) => {
         if (!editName.trim()) return;
         const { error } = await supabase
-            .from('templates')
+            .from('projects')
             .update({ name: editName.trim(), updated_at: new Date().toISOString() })
             .eq('id', id);
 
         if (!error) {
-            setTemplates((prev) =>
-                prev.map((t) => (t.id === id ? { ...t, name: editName.trim() } : t))
+            setProjects((prev) =>
+                prev.map((p) => (p.id === id ? { ...p, name: editName.trim() } : p))
             );
-            // Also update matching project name
-            await supabase.from('projects').update({ name: editName.trim() }).eq('id', id);
         }
         setEditingId(null);
     };
 
     const handleDelete = async (id: string) => {
         if (!confirm('Delete this template?')) return;
-        const { error } = await supabase.from('templates').delete().eq('id', id);
+        const { error } = await supabase.from('projects').delete().eq('id', id);
         if (!error) {
-            setTemplates((prev) => prev.filter((t) => t.id !== id));
-            // Also delete matching project
-            await supabase.from('projects').delete().eq('id', id);
+            setProjects((prev) => prev.filter((p) => p.id !== id));
         }
     };
 
@@ -134,7 +133,7 @@ function TemplatesView({
                 </button>
             </div>
 
-            {templates.length === 0 ? (
+            {projects.length === 0 ? (
                 <div className="text-center py-20 text-neutral-500 border-2 border-dashed border-neutral-800 rounded-xl bg-neutral-900/50">
                     <LayoutTemplate size={48} className="mx-auto mb-4 opacity-30" />
                     <p>Noch keine Templates vorhanden.</p>
@@ -144,14 +143,14 @@ function TemplatesView({
                 </div>
             ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
-                    {templates.map((tpl) => (
+                    {projects.map((proj) => (
                         <div
-                            key={tpl.id}
+                            key={proj.id}
                             className="group bg-neutral-900 border border-neutral-800 hover:border-blue-500/50 rounded-xl overflow-hidden cursor-pointer transition-all hover:shadow-xl hover:shadow-blue-900/10 hover:-translate-y-1 relative"
                         >
                             {/* Preview Placeholder */}
                             <div
-                                onClick={() => onOpenEditor(tpl.id)}
+                                onClick={() => onOpenEditor(proj.id)}
                                 className="aspect-[9/16] bg-neutral-950 flex items-center justify-center relative overflow-hidden"
                             >
                                 <Film className="text-neutral-800 w-14 h-14 group-hover:text-neutral-700 transition-colors" />
@@ -159,7 +158,7 @@ function TemplatesView({
                             </div>
 
                             <div className="p-4">
-                                {editingId === tpl.id ? (
+                                {editingId === proj.id ? (
                                     <div className="flex items-center gap-1">
                                         <input
                                             ref={editRef}
@@ -167,13 +166,13 @@ function TemplatesView({
                                             value={editName}
                                             onChange={(e) => setEditName(e.target.value)}
                                             onKeyDown={(e) => {
-                                                if (e.key === 'Enter') handleRename(tpl.id);
+                                                if (e.key === 'Enter') handleRename(proj.id);
                                                 if (e.key === 'Escape') setEditingId(null);
                                             }}
                                             className="flex-1 bg-neutral-800 border border-neutral-700 rounded px-2 py-1 text-sm text-neutral-200 outline-none focus:border-blue-500"
                                         />
                                         <button
-                                            onClick={() => handleRename(tpl.id)}
+                                            onClick={() => handleRename(proj.id)}
                                             className="p-1 text-green-400 hover:text-green-300"
                                         >
                                             <Check size={16} />
@@ -187,14 +186,14 @@ function TemplatesView({
                                     </div>
                                 ) : (
                                     <h3
-                                        onClick={() => onOpenEditor(tpl.id)}
+                                        onClick={() => onOpenEditor(proj.id)}
                                         className="font-semibold text-neutral-200 truncate group-hover:text-blue-400 transition-colors pr-14"
                                     >
-                                        {tpl.name}
+                                        {proj.name}
                                     </h3>
                                 )}
                                 <p className="text-xs text-neutral-500 mt-1">
-                                    {new Date(tpl.created_at).toLocaleDateString('de-DE', {
+                                    {new Date(proj.updated_at).toLocaleDateString('de-DE', {
                                         day: '2-digit',
                                         month: '2-digit',
                                         year: 'numeric',
@@ -209,8 +208,8 @@ function TemplatesView({
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        setEditingId(tpl.id);
-                                        setEditName(tpl.name);
+                                        setEditingId(proj.id);
+                                        setEditName(proj.name);
                                     }}
                                     className="p-2 bg-neutral-900/80 hover:bg-blue-900/80 text-neutral-400 hover:text-white rounded-full"
                                     title="Umbenennen"
@@ -220,7 +219,7 @@ function TemplatesView({
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        handleDelete(tpl.id);
+                                        handleDelete(proj.id);
                                     }}
                                     className="p-2 bg-neutral-900/80 hover:bg-red-900/80 text-neutral-400 hover:text-white rounded-full"
                                     title="Löschen"
@@ -244,6 +243,7 @@ function LogsView({ user }: { user: any }) {
     const [renders, setRenders] = useState<RenderRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [expandedId, setExpandedId] = useState<string | null>(null);
+    const [downloading, setDownloading] = useState<string | null>(null);
 
     useEffect(() => {
         fetchRenders();
@@ -290,11 +290,41 @@ function LogsView({ user }: { user: any }) {
         },
     };
 
-    const handleDownload = (url: string) => {
-        const renderApiUrl = process.env.NEXT_PUBLIC_RENDER_API_URL || '';
-        const fullUrl = url.startsWith('http') ? url : `${renderApiUrl}${url}`;
-        window.open(fullUrl, '_blank');
+    // Force Download Helper
+    const handleDownload = async (url: string, filename?: string) => {
+        if (!url) return;
+
+        try {
+            setDownloading(url);
+            const renderApiUrl = process.env.NEXT_PUBLIC_RENDER_API_URL || '';
+            const fullUrl = url.startsWith('http') ? url : `${renderApiUrl}${url}`;
+
+            // Try fetching effectively acting as a proxy download
+            const response = await fetch(fullUrl);
+            if (!response.ok) throw new Error('Download failed');
+
+            const blob = await response.blob();
+            const blobUrl = window.URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = filename || url.split('/').pop() || 'render.mp4';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(blobUrl);
+
+        } catch (e) {
+            console.error("Download failed, falling back to new tab", e);
+            // Fallback
+            const renderApiUrl = process.env.NEXT_PUBLIC_RENDER_API_URL || '';
+            const fullUrl = url.startsWith('http') ? url : `${renderApiUrl}${url}`;
+            window.open(fullUrl, '_blank');
+        } finally {
+            setDownloading(null);
+        }
     };
+
 
     const copyToClipboard = (text: string) => {
         navigator.clipboard.writeText(text);
@@ -332,6 +362,7 @@ function LogsView({ user }: { user: any }) {
             {renders.map((render) => {
                 const sc = statusConfig[render.status] || statusConfig.pending;
                 const isExpanded = expandedId === render.id;
+                const isDownloading = downloading === render.output_url;
 
                 return (
                     <div key={render.id}>
@@ -499,12 +530,13 @@ function LogsView({ user }: { user: any }) {
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                handleDownload(render.output_url!);
+                                                handleDownload(render.output_url!, `render_${render.render_job_id}.mp4`);
                                             }}
-                                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg font-medium transition-colors shadow-lg shadow-blue-900/20"
+                                            disabled={isDownloading}
+                                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg font-medium transition-colors shadow-lg shadow-blue-900/20 disabled:opacity-50"
                                         >
-                                            <Download size={16} />
-                                            Download Output
+                                            {isDownloading ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                                            {isDownloading ? 'Lade herunter...' : 'Download Output'}
                                         </button>
                                         <a
                                             href={
