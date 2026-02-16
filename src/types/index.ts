@@ -23,6 +23,9 @@ export interface Block {
   loop?: boolean;
   // Dynamic / Placeholder flag
   isDynamic?: boolean; // If true, source or text is a {{placeholder}} that gets filled via API
+  // API Dynamic Fields
+  dynamicId?: string; // User-defined ID for API targeting (e.g. "image_1", "product_shot")
+  dynamicFields?: string[]; // List of property names marked as dynamic (e.g. ["source", "duration"])
   // Subtitles
   subtitleEnabled?: boolean; // Enable automatic subtitles for this block
   subtitleSource?: string; // VTT content string, URL to .vtt, or placeholder {{subtitle_1}}

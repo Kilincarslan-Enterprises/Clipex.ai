@@ -7,6 +7,16 @@ export interface TemplateRow {
     updated_at: string;
 }
 
+export interface ApiKeyRow {
+    id: string;
+    user_id: string;
+    name: string;
+    key_prefix: string;
+    key_hash: string;
+    last_used_at?: string;
+    created_at: string;
+}
+
 export interface RenderRow {
     id: string;
     user_id?: string;

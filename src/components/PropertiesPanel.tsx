@@ -1,7 +1,7 @@
 'use client';
 
 import { useStore } from '@/lib/store';
-import { Trash2, Volume2, Loader2 } from 'lucide-react';
+import { Trash2, Volume2, Loader2, Zap } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { useState, useEffect } from 'react';
 
@@ -27,6 +27,51 @@ export function PropertiesPanel() {
 
     const isPlaceholderSource = selectedBlock.source?.match(/^{{(.+)}}$/);
     const placeholderName = isPlaceholderSource ? isPlaceholderSource[1] : null;
+
+    // ── Dynamic field helpers ──
+    const dynamicFields = selectedBlock.dynamicFields || [];
+    const hasDynamicFields = dynamicFields.length > 0;
+
+    const toggleFieldDynamic = (fieldName: string) => {
+        const current = selectedBlock.dynamicFields || [];
+        let newFields: string[];
+        if (current.includes(fieldName)) {
+            newFields = current.filter(f => f !== fieldName);
+        } else {
+            newFields = [...current, fieldName];
+        }
+
+        // Auto-generate dynamicId if first dynamic field
+        const updates: Record<string, any> = { dynamicFields: newFields };
+        if (newFields.length > 0 && !selectedBlock.dynamicId) {
+            const count = template.timeline.filter(b => b.type === selectedBlock.type && b.dynamicId).length + 1;
+            updates.dynamicId = `${selectedBlock.type}_${count}`;
+        }
+        if (newFields.length === 0) {
+            updates.dynamicId = undefined;
+        }
+        updateBlock(selectedBlock.id, updates);
+    };
+
+    const isFieldDynamic = (fieldName: string) => dynamicFields.includes(fieldName);
+
+    /** Small ⚡ toggle button for making a field dynamic */
+    const DynToggle = ({ field, label }: { field: string; label?: string }) => {
+        const active = isFieldDynamic(field);
+        return (
+            <button
+                onClick={(e) => { e.preventDefault(); toggleFieldDynamic(field); }}
+                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border transition-all ${active
+                    ? 'bg-amber-500/15 text-amber-400 border-amber-500/30 hover:bg-amber-500/25'
+                    : 'bg-neutral-800/50 text-neutral-600 border-neutral-700/50 hover:text-neutral-400 hover:border-neutral-600'
+                    }`}
+                title={active ? `"${field}" is dynamic – click to disable` : `Make "${field}" controllable via API`}
+            >
+                <Zap size={10} />
+                {label || field}
+            </button>
+        );
+    };
 
     const toggleDynamic = (isDynamic: boolean) => {
         if (isDynamic) {
@@ -73,10 +118,38 @@ export function PropertiesPanel() {
                     </div>
                 </div>
 
+                {/* Dynamic ID Section */}
+                {hasDynamicFields && (
+                    <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                            <label className="text-xs text-amber-400 uppercase font-bold flex items-center gap-1">
+                                <Zap size={12} /> API Dynamic ID
+                            </label>
+                            <span className="text-[10px] text-neutral-600">{dynamicFields.length} field(s)</span>
+                        </div>
+                        <input
+                            type="text"
+                            value={selectedBlock.dynamicId || ''}
+                            onChange={(e) => updateBlock(selectedBlock.id, { dynamicId: e.target.value.replace(/[^a-zA-Z0-9_-]/g, '') })}
+                            placeholder="z.B. image_1, product_shot"
+                            className="w-full bg-neutral-900 border border-amber-500/20 rounded px-2 py-1 text-sm text-amber-300 font-mono outline-none focus:border-amber-500/50"
+                        />
+                        <div className="flex flex-wrap gap-1">
+                            {dynamicFields.map((f) => (
+                                <span key={f} className="text-[10px] bg-amber-500/10 text-amber-400/80 px-1.5 py-0.5 rounded font-mono">
+                                    {selectedBlock.dynamicId || '?'}.{f}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 {/* Timing */}
                 <div className="grid grid-cols-2 gap-3">
                     <div className="flex flex-col gap-1">
-                        <label className="text-xs text-neutral-500 uppercase">Start (s)</label>
+                        <div className="flex items-center justify-between">
+                            <label className="text-xs text-neutral-500 uppercase">Start (s)</label>
+                        </div>
                         <input
                             type="number"
                             step="0.1"
@@ -86,13 +159,16 @@ export function PropertiesPanel() {
                         />
                     </div>
                     <div className="flex flex-col gap-1">
-                        <label className="text-xs text-neutral-500 uppercase">Duration (s)</label>
+                        <div className="flex items-center justify-between">
+                            <label className="text-xs text-neutral-500 uppercase">Duration (s)</label>
+                            <DynToggle field="duration" />
+                        </div>
                         <input
                             type="number"
                             step="0.1"
                             value={selectedBlock.duration}
                             onChange={(e) => updateBlock(selectedBlock.id, { duration: parseFloat(e.target.value) || 0.1 })}
-                            className="bg-neutral-800 border-none rounded px-2 py-1 text-sm text-neutral-200 focus:ring-1 focus:ring-blue-500 outline-none"
+                            className={`bg-neutral-800 border-none rounded px-2 py-1 text-sm text-neutral-200 focus:ring-1 focus:ring-blue-500 outline-none ${isFieldDynamic('duration') ? 'ring-1 ring-amber-500/30' : ''}`}
                         />
                     </div>
                 </div>
@@ -116,7 +192,10 @@ export function PropertiesPanel() {
                     <div className="space-y-3">
                         <h3 className="text-xs font-bold text-amber-400 uppercase">Text Properties</h3>
                         <div className="flex flex-col gap-1">
-                            <label className="text-xs text-neutral-500 uppercase">Content</label>
+                            <div className="flex items-center justify-between">
+                                <label className="text-xs text-neutral-500 uppercase">Content</label>
+                                <DynToggle field="text" label="text" />
+                            </div>
                             <textarea
                                 value={selectedBlock.text || ''}
                                 onChange={(e) => updateBlock(selectedBlock.id, { text: e.target.value })}
@@ -161,8 +240,9 @@ export function PropertiesPanel() {
                             {selectedBlock.type === 'video' ? 'Video' : 'Image'} Source
                         </h3>
 
-                        {/* Dynamic Toggle */}
+                        {/* Dynamic Toggle for Source */}
                         <div className="flex items-center gap-2">
+                            <DynToggle field="source" />
                             <input
                                 type="checkbox"
                                 id="dynamic-check"

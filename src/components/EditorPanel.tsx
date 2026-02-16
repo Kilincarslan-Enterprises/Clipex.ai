@@ -7,7 +7,7 @@ import { JsonEditor } from './JsonEditor';
 import { useStore } from '@/lib/store';
 import { Block } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
-import { Code, Layers, Video, Loader2, ArrowLeft, Wifi, WifiOff } from 'lucide-react';
+import { Code, Layers, Video, Loader2, ArrowLeft, Wifi, WifiOff, Zap, X, Copy, Check } from 'lucide-react';
 import { useRouter, useParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/utils/supabase/client';
@@ -31,9 +31,11 @@ export function EditorPanel() {
     const supabase = createClient();
     const [userId, setUserId] = useState<string | null>(null);
 
-    const { addBlock, currentTime, template, placeholders } = useStore();
+    const { addBlock, currentTime, template, placeholders, projectId } = useStore();
 
     const [renderProgress, setRenderProgress] = useState(0);
+    const [showApiModal, setShowApiModal] = useState(false);
+    const [copiedApi, setCopiedApi] = useState(false);
 
     // Direct URL to the render service (bypasses broken Cloudflare Pages API routes)
     const RENDER_URL = process.env.NEXT_PUBLIC_RENDER_API_URL || 'http://localhost:3001';
@@ -223,6 +225,29 @@ export function EditorPanel() {
         window.open(fullUrl, '_blank');
     };
 
+    // Generate API request JSON
+    const generateApiJson = () => {
+        const dynamicBlocks = template.timeline.filter(
+            b => b.dynamicId && b.dynamicFields && b.dynamicFields.length > 0
+        );
+        const modifications: Record<string, string> = {};
+        for (const block of dynamicBlocks) {
+            for (const field of (block.dynamicFields || [])) {
+                modifications[`${block.dynamicId}.${field}`] = `<${field}_value>`;
+            }
+        }
+        return JSON.stringify({
+            template_id: projectId || params?.id || '<template_uuid>',
+            modifications,
+        }, null, 2);
+    };
+
+    const copyApiJson = () => {
+        navigator.clipboard.writeText(generateApiJson());
+        setCopiedApi(true);
+        setTimeout(() => setCopiedApi(false), 2000);
+    };
+
     return (
         <div className="flex-1 flex flex-col min-w-0 bg-neutral-950 h-full relative">
             {/* Toggle Bar */}
@@ -257,6 +282,17 @@ export function EditorPanel() {
 
                 <div className="flex items-center gap-2">
                     <HealthDot />
+                    {/* API Preview Button */}
+                    {template.timeline.some(b => b.dynamicId && b.dynamicFields && b.dynamicFields.length > 0) && (
+                        <button
+                            onClick={() => setShowApiModal(true)}
+                            className="px-3 py-1.5 rounded text-sm font-medium flex items-center gap-1.5 transition-colors bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/20"
+                            title="API Request Preview"
+                        >
+                            <Zap size={14} />
+                            API
+                        </button>
+                    )}
                     <button
                         onClick={handleRender}
                         disabled={isRendering || (health !== null && !health.connected)}
@@ -267,6 +303,44 @@ export function EditorPanel() {
                     </button>
                 </div>
             </div>
+
+            {/* ── API Preview Modal ── */}
+            {showApiModal && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-neutral-900 border border-neutral-700 rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <Zap className="text-amber-400" size={18} />
+                                <h3 className="text-lg font-bold text-neutral-100">API Request Preview</h3>
+                            </div>
+                            <button onClick={() => setShowApiModal(false)} className="p-1 text-neutral-500 hover:text-white">
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="bg-neutral-950 border border-neutral-800 rounded-lg p-4 font-mono text-xs text-neutral-300 overflow-x-auto whitespace-pre">
+                            {generateApiJson()}
+                        </div>
+                        <div className="bg-neutral-950 border border-neutral-800 rounded-lg p-4 font-mono text-xs text-neutral-400 overflow-x-auto whitespace-pre-wrap">
+                            {`curl -X POST \\\n  ${typeof window !== 'undefined' ? window.location.origin : 'https://your-app.com'}/api/v1/render \\\n  -H "Content-Type: application/json" \\\n  -H "x-api-key: ck_your_api_key" \\\n  -d '${generateApiJson()}'`}
+                        </div>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={copyApiJson}
+                                className="flex-1 py-2.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 rounded-xl font-medium transition-all flex items-center justify-center gap-2 border border-amber-500/20"
+                            >
+                                {copiedApi ? <Check size={16} /> : <Copy size={16} />}
+                                {copiedApi ? 'Kopiert!' : 'JSON Kopieren'}
+                            </button>
+                            <button
+                                onClick={() => setShowApiModal(false)}
+                                className="flex-1 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-xl font-medium transition-colors"
+                            >
+                                Schließen
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Content Area */}
             <div className="flex-1 overflow-hidden relative flex flex-col">
