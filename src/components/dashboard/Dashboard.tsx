@@ -6,8 +6,9 @@ import { RenderRow } from '@/types/db';
 import {
     LayoutTemplate, ScrollText, Plus, Pencil, Check, X, Trash2,
     Film, Loader2, Download, ChevronDown, ChevronUp, Clock,
-    CheckCircle2, XCircle, AlertCircle, ExternalLink, Copy
+    CheckCircle2, XCircle, AlertCircle, ExternalLink, Copy, Key
 } from 'lucide-react';
+import ApiKeysView from './ApiKeysView';
 
 // Using ProjectRow structure but calling them "Templates" in UI
 interface ProjectRow {
@@ -566,7 +567,7 @@ function LogsView({ user }: { user: any }) {
 // ═══════════════════════════════════════════════════════════
 // Dashboard Component (Main Export)
 // ═══════════════════════════════════════════════════════════
-export type DashboardTab = 'templates' | 'logs';
+export type DashboardTab = 'templates' | 'logs' | 'api';
 
 export default function Dashboard({
     user,
@@ -580,6 +581,7 @@ export default function Dashboard({
     const tabs: { id: DashboardTab; label: string; icon: React.ReactNode }[] = [
         { id: 'templates', label: 'Templates', icon: <LayoutTemplate size={18} /> },
         { id: 'logs', label: 'Logs', icon: <ScrollText size={18} /> },
+        { id: 'api', label: 'API Keys', icon: <Key size={18} /> },
     ];
 
     return (
@@ -607,6 +609,7 @@ export default function Dashboard({
                 <TemplatesView user={user} onOpenEditor={onOpenEditor} />
             )}
             {activeTab === 'logs' && <LogsView user={user} />}
+            {activeTab === 'api' && <ApiKeysView user={user} />}
         </div>
     );
 }
