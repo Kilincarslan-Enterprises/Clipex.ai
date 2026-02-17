@@ -2,6 +2,7 @@
 
 import { createClient } from '@/utils/supabase/server';
 import { createAdminClient } from '@/utils/supabase/admin';
+import { randomBytes, createHash } from 'node:crypto';
 
 /**
  * Generate a new API key for the current user.
@@ -16,16 +17,11 @@ export async function createApiKey(name: string): Promise<{ key: string; id: str
     }
 
     // Generate a random key: ck_<random_hex>
-    const randomBytes = new Uint8Array(32);
-    crypto.getRandomValues(randomBytes);
-    const rawKey = 'ck_' + Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    const rawKey = 'ck_' + randomBytes(32).toString('hex');
     const keyPrefix = rawKey.substring(0, 11); // "ck_" + first 8 hex chars
 
-    // Hash it
-    const encoder = new TextEncoder();
-    const data = encoder.encode(rawKey);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const keyHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+    // Hash with node:crypto (stable in Server Actions)
+    const keyHash = createHash('sha256').update(rawKey).digest('hex');
 
     // Store in DB (use admin client to bypass RLS for insert with user_id)
     const admin = createAdminClient();

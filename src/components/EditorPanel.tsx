@@ -227,10 +227,18 @@ export function EditorPanel() {
 
     // Generate API request JSON
     const generateApiJson = () => {
+        const modifications: Record<string, string> = {};
+
+        // Template-level dynamic fields (e.g. template.duration)
+        const templateDynFields = template.dynamic?.dynamicFields || [];
+        for (const field of templateDynFields) {
+            modifications[`template.${field}`] = `<${field}_value>`;
+        }
+
+        // Block-level dynamic fields
         const dynamicBlocks = template.timeline.filter(
             b => b.dynamicId && b.dynamicFields && b.dynamicFields.length > 0
         );
-        const modifications: Record<string, string> = {};
         for (const block of dynamicBlocks) {
             for (const field of (block.dynamicFields || [])) {
                 modifications[`${block.dynamicId}.${field}`] = `<${field}_value>`;
@@ -283,7 +291,7 @@ export function EditorPanel() {
                 <div className="flex items-center gap-2">
                     <HealthDot />
                     {/* API Preview Button */}
-                    {template.timeline.some(b => b.dynamicId && b.dynamicFields && b.dynamicFields.length > 0) && (
+                    {(template.timeline.some(b => b.dynamicId && b.dynamicFields && b.dynamicFields.length > 0) || (template.dynamic?.dynamicFields?.length ?? 0) > 0) && (
                         <button
                             onClick={() => setShowApiModal(true)}
                             className="px-3 py-1.5 rounded text-sm font-medium flex items-center gap-1.5 transition-colors bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/20"

@@ -2,7 +2,7 @@
 
 The Clipex.ai platform exposes two APIs:
 
-1. **Render Service API** — Direct access to the render backend (internal)
+1. **Render Service API** — Direct access to the render backend (internal, not publicly accessible)
 2. **Public API** — Authenticated endpoint routed through the frontend (recommended)
 
 ---
@@ -35,9 +35,12 @@ Start a render job using a saved template with optional dynamic modifications.
 {
   "template_id": "uuid-of-your-template",
   "modifications": {
+    "template.duration": 30,
     "image_1.source": "https://example.com/photo.jpg",
     "image_1.duration": 5,
-    "text_1.text": "Hello World"
+    "image_1.x": 100,
+    "text_1.text": "Hello World",
+    "text_1.subtitleSource": "https://example.com/subtitles.vtt"
   },
   "elements": [
     {
@@ -56,18 +59,25 @@ Start a render job using a saved template with optional dynamic modifications.
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `template_id` | string (UUID) | **Yes** | The ID of the template/project to render |
-| `modifications` | object | No | Key-value pairs in `dynamicId.property` format |
+| `modifications` | object | No | Key-value pairs in `dynamicId.property` or `template.property` format |
 | `elements` | array | No | New blocks to inject into the timeline |
 
 **Modification Keys**:
 
-Keys follow the format `<dynamicId>.<property>`. The `dynamicId` is set in the Editor UI when you mark a field as dynamic (⚡). Available properties depend on the block type:
+Keys follow the format `<dynamicId>.<property>` for blocks, or `template.<property>` for template-level settings. The `dynamicId` is set in the Editor UI when you mark a field as dynamic (⚡). Available properties:
 
+**Template-level** (`template.`):
+| Property | Type | Description |
+|---|---|---|
+| `duration` | number | Total template duration in seconds |
+
+**Block-level** (`<dynamicId>.`):
 | Block Type | Available Properties |
 |---|---|
-| `video` / `image` | `source`, `duration`, `x`, `y`, `width`, `height` |
-| `text` | `text`, `duration`, `fontSize`, `color`, `backgroundColor` |
-| `audio` | `source`, `duration`, `volume` |
+| All | `start`, `duration`, `track`, `x`, `y`, `width`, `height` |
+| `video` / `image` | `source` |
+| `text` | `text`, `fontSize`, `color`, `subtitleSource` |
+| `audio` | `source`, `volume` |
 
 **Response** (Success):
 ```json
@@ -105,9 +115,13 @@ Use the `statusUrl` from the render response to poll for completion:
 
 ## Render Service API (Internal)
 
-**Base URL**: `https://your-render-service.com` (e.g., `https://api-clipex.kilincarslanenterprises.com`)
+**Base URL**: `https://your-render-service.com`
 
-> ⚠️ This API has **no authentication**. Use the Public API above for external integrations.
+> ⚠️ This API is **not publicly accessible**. All requests must include a valid `X-Render-Access-Token` header. Use the Public API above for external integrations.
+
+### Security
+
+The render service validates every incoming request via the `X-Render-Access-Token` header. This token is shared between the frontend server and the render service.
 
 ### GET `/health`
 
@@ -145,6 +159,7 @@ curl -X POST \
   -d '{
     "template_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "modifications": {
+      "template.duration": 30,
       "image_1.source": "https://cdn.example.com/product.jpg",
       "image_1.duration": 4,
       "text_1.text": "Summer Sale 50% Off"
