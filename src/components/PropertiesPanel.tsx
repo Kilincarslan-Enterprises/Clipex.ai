@@ -422,7 +422,11 @@ export function PropertiesPanel() {
 
                 {/* ═══════ ANIMATIONS (Video/Image/Text) ═══════ */}
                 {selectedBlock.type !== 'audio' && (
-                    <AnimationsSection blockId={selectedBlock.id} />
+                    <AnimationsSection
+                        blockId={selectedBlock.id}
+                        toggleFieldDynamic={toggleFieldDynamic}
+                        isFieldDynamic={isFieldDynamic}
+                    />
                 )}
             </div>
         </div>
