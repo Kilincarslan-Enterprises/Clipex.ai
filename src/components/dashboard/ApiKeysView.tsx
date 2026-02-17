@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Key, Plus, Trash2, Loader2, Copy, Check, Eye, EyeOff, AlertTriangle } from 'lucide-react';
+import { Key, Plus, Trash2, Loader2, Copy, Check, AlertTriangle } from 'lucide-react';
+import { createClient } from '@/utils/supabase/client';
 
 interface ApiKeyDisplay {
     id: string;
@@ -11,7 +12,26 @@ interface ApiKeyDisplay {
     last_used_at?: string;
 }
 
+/**
+ * Generate random hex string using Web Crypto API
+ */
+function generateRandomHex(length: number): string {
+    const array = new Uint8Array(length);
+    crypto.getRandomValues(array);
+    return Array.from(array, b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * SHA-256 hash using Web Crypto API
+ */
+async function sha256(input: string): Promise<string> {
+    const data = new TextEncoder().encode(input);
+    const hash = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(hash), b => b.toString(16).padStart(2, '0')).join('');
+}
+
 export default function ApiKeysView({ user }: { user: any }) {
+    const supabase = createClient();
     const [keys, setKeys] = useState<ApiKeyDisplay[]>([]);
     const [loading, setLoading] = useState(true);
     const [creating, setCreating] = useState(false);
@@ -21,44 +41,42 @@ export default function ApiKeysView({ user }: { user: any }) {
     const [copiedKey, setCopiedKey] = useState(false);
     const [revokingId, setRevokingId] = useState<string | null>(null);
 
-    useEffect(() => {
-        fetchKeys();
-    }, []);
+    useEffect(() => { fetchKeys(); }, []);
 
     const fetchKeys = async () => {
         setLoading(true);
-        try {
-            const res = await fetch('/api/api-keys');
-            if (!res.ok) throw new Error('Failed to fetch');
-            const data = await res.json();
-            setKeys(data.keys || []);
-        } catch (err) {
-            console.error('List API keys error:', err);
-            setKeys([]);
-        }
+        const { data, error } = await supabase
+            .from('api_keys')
+            .select('id, name, key_prefix, created_at, last_used_at')
+            .order('created_at', { ascending: false });
+
+        if (!error) setKeys(data || []);
         setLoading(false);
     };
 
     const handleCreate = async () => {
+        if (!user) return;
         setCreating(true);
-        try {
-            const res = await fetch('/api/api-keys', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: newKeyName || 'Default Key' }),
+
+        const rawKey = 'ck_' + generateRandomHex(32);
+        const keyPrefix = rawKey.substring(0, 11);
+        const keyHash = await sha256(rawKey);
+
+        const { error } = await supabase
+            .from('api_keys')
+            .insert({
+                user_id: user.id,
+                name: newKeyName || 'Default Key',
+                key_prefix: keyPrefix,
+                key_hash: keyHash,
             });
 
-            if (!res.ok) {
-                const err = await res.json();
-                alert(err.error || 'Failed to create API key');
-            } else {
-                const result = await res.json();
-                setNewKeyRaw(result.key);
-                fetchKeys();
-            }
-        } catch (err) {
-            console.error('Create API key error:', err);
-            alert('Failed to create API key');
+        if (error) {
+            console.error('Create API key error:', error);
+            alert('Fehler beim Erstellen des API Keys');
+        } else {
+            setNewKeyRaw(rawKey);
+            fetchKeys();
         }
         setCreating(false);
     };
@@ -66,17 +84,15 @@ export default function ApiKeysView({ user }: { user: any }) {
     const handleRevoke = async (id: string) => {
         if (!confirm('Diesen API Key wirklich widerrufen? Alle Anfragen mit diesem Key werden danach fehlschlagen.')) return;
         setRevokingId(id);
-        try {
-            const res = await fetch(`/api/api-keys?id=${id}`, { method: 'DELETE' });
-            if (res.ok) {
-                setKeys(prev => prev.filter(k => k.id !== id));
-            } else {
-                const err = await res.json();
-                alert(err.error || 'Failed to revoke key');
-            }
-        } catch (err) {
-            console.error('Revoke API key error:', err);
-            alert('Failed to revoke key');
+        const { error } = await supabase
+            .from('api_keys')
+            .delete()
+            .eq('id', id);
+
+        if (!error) {
+            setKeys(prev => prev.filter(k => k.id !== id));
+        } else {
+            alert('Fehler beim Widerrufen des Keys');
         }
         setRevokingId(null);
     };
@@ -123,7 +139,6 @@ export default function ApiKeysView({ user }: { user: any }) {
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                     <div className="bg-neutral-900 border border-neutral-700 rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5">
                         {newKeyRaw ? (
-                            /* ── Key Created Successfully ── */
                             <>
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center">
@@ -163,7 +178,6 @@ export default function ApiKeysView({ user }: { user: any }) {
                                 </button>
                             </>
                         ) : (
-                            /* ── Create Key Form ── */
                             <>
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center">
