@@ -2,7 +2,6 @@
 
 import { useStore } from '@/lib/store';
 import { Trash2, Volume2, Loader2, Zap } from 'lucide-react';
-import { v4 as uuidv4 } from 'uuid';
 import { useState, useEffect } from 'react';
 
 export function PropertiesPanel() {
@@ -11,8 +10,6 @@ export function PropertiesPanel() {
         template,
         updateBlock,
         removeBlock,
-        placeholders,
-        setPlaceholder
     } = useStore();
 
     const selectedBlock = template.timeline.find((b) => b.id === selectedBlockId);
@@ -24,9 +21,6 @@ export function PropertiesPanel() {
             </div>
         );
     }
-
-    const isPlaceholderSource = selectedBlock.source?.match(/^{{(.+)}}$/);
-    const placeholderName = isPlaceholderSource ? isPlaceholderSource[1] : null;
 
     // ── Dynamic field helpers ──
     const dynamicFields = selectedBlock.dynamicFields || [];
@@ -41,8 +35,8 @@ export function PropertiesPanel() {
             newFields = [...current, fieldName];
         }
 
-        // Auto-generate dynamicId if first dynamic field
         const updates: Record<string, any> = { dynamicFields: newFields };
+        // Auto-generate dynamicId if first dynamic field
         if (newFields.length > 0 && !selectedBlock.dynamicId) {
             const count = template.timeline.filter(b => b.type === selectedBlock.type && b.dynamicId).length + 1;
             updates.dynamicId = `${selectedBlock.type}_${count}`;
@@ -55,38 +49,21 @@ export function PropertiesPanel() {
 
     const isFieldDynamic = (fieldName: string) => dynamicFields.includes(fieldName);
 
-    /** Small ⚡ toggle button for making a field dynamic */
-    const DynToggle = ({ field, label }: { field: string; label?: string }) => {
+    /** Small ⚡ icon-only toggle */
+    const Dyn = ({ field }: { field: string }) => {
         const active = isFieldDynamic(field);
         return (
             <button
                 onClick={(e) => { e.preventDefault(); toggleFieldDynamic(field); }}
-                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border transition-all ${active
-                    ? 'bg-amber-500/15 text-amber-400 border-amber-500/30 hover:bg-amber-500/25'
-                    : 'bg-neutral-800/50 text-neutral-600 border-neutral-700/50 hover:text-neutral-400 hover:border-neutral-600'
+                className={`w-5 h-5 inline-flex items-center justify-center rounded transition-all ${active
+                    ? 'bg-orange-500/20 text-orange-400 hover:bg-orange-500/30'
+                    : 'text-neutral-700 hover:text-neutral-500 hover:bg-neutral-800'
                     }`}
-                title={active ? `"${field}" is dynamic – click to disable` : `Make "${field}" controllable via API`}
+                title={active ? `"${field}" is dynamic via API – click to disable` : `Make "${field}" controllable via API`}
             >
-                <Zap size={10} />
-                {label || field}
+                <Zap size={10} className={active ? 'fill-orange-400' : ''} />
             </button>
         );
-    };
-
-    const toggleDynamic = (isDynamic: boolean) => {
-        if (isDynamic) {
-            const shortId = uuidv4().slice(0, 8);
-            const pName = `${selectedBlock.type}_${shortId}`;
-            updateBlock(selectedBlock.id, { source: `{{${pName}}}` });
-        } else {
-            // Convert back to direct URL
-            if (placeholderName) {
-                const url = placeholders[placeholderName];
-                updateBlock(selectedBlock.id, { source: url || '' });
-            } else {
-                updateBlock(selectedBlock.id, { source: '' });
-            }
-        }
     };
 
     const TYPE_COLORS: Record<string, string> = {
@@ -95,6 +72,10 @@ export function PropertiesPanel() {
         text: 'text-amber-400 bg-amber-500/10',
         audio: 'text-purple-400 bg-purple-500/10',
     };
+
+    /** Input class with optional orange ring when field is dynamic */
+    const inputCls = (field?: string) =>
+        `bg-neutral-800 border-none rounded px-2 py-1 text-sm text-neutral-200 focus:ring-1 focus:ring-blue-500 outline-none ${field && isFieldDynamic(field) ? 'ring-1 ring-orange-500/40' : ''}`;
 
     return (
         <div className="flex flex-col h-full bg-neutral-900 overflow-y-auto">
@@ -120,10 +101,10 @@ export function PropertiesPanel() {
 
                 {/* Dynamic ID Section */}
                 {hasDynamicFields && (
-                    <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3 space-y-2">
+                    <div className="bg-orange-500/5 border border-orange-500/20 rounded-lg p-3 space-y-2">
                         <div className="flex items-center justify-between">
-                            <label className="text-xs text-amber-400 uppercase font-bold flex items-center gap-1">
-                                <Zap size={12} /> API Dynamic ID
+                            <label className="text-xs text-orange-400 uppercase font-bold flex items-center gap-1">
+                                <Zap size={12} className="fill-orange-400" /> Dynamic ID
                             </label>
                             <span className="text-[10px] text-neutral-600">{dynamicFields.length} field(s)</span>
                         </div>
@@ -132,11 +113,11 @@ export function PropertiesPanel() {
                             value={selectedBlock.dynamicId || ''}
                             onChange={(e) => updateBlock(selectedBlock.id, { dynamicId: e.target.value.replace(/[^a-zA-Z0-9_-]/g, '') })}
                             placeholder="z.B. image_1, product_shot"
-                            className="w-full bg-neutral-900 border border-amber-500/20 rounded px-2 py-1 text-sm text-amber-300 font-mono outline-none focus:border-amber-500/50"
+                            className="w-full bg-neutral-900 border border-orange-500/20 rounded px-2 py-1 text-sm text-orange-300 font-mono outline-none focus:border-orange-500/50"
                         />
                         <div className="flex flex-wrap gap-1">
                             {dynamicFields.map((f) => (
-                                <span key={f} className="text-[10px] bg-amber-500/10 text-amber-400/80 px-1.5 py-0.5 rounded font-mono">
+                                <span key={f} className="text-[10px] bg-orange-500/10 text-orange-400/80 px-1.5 py-0.5 rounded font-mono">
                                     {selectedBlock.dynamicId || '?'}.{f}
                                 </span>
                             ))}
@@ -144,76 +125,83 @@ export function PropertiesPanel() {
                     </div>
                 )}
 
-                {/* Timing */}
+                {/* ═══════ Timing ═══════ */}
                 <div className="grid grid-cols-2 gap-3">
                     <div className="flex flex-col gap-1">
                         <div className="flex items-center justify-between">
                             <label className="text-xs text-neutral-500 uppercase">Start (s)</label>
+                            <Dyn field="start" />
                         </div>
                         <input
-                            type="number"
-                            step="0.1"
+                            type="number" step="0.1"
                             value={selectedBlock.start}
                             onChange={(e) => updateBlock(selectedBlock.id, { start: parseFloat(e.target.value) || 0 })}
-                            className="bg-neutral-800 border-none rounded px-2 py-1 text-sm text-neutral-200 focus:ring-1 focus:ring-blue-500 outline-none"
+                            className={inputCls('start')}
                         />
                     </div>
                     <div className="flex flex-col gap-1">
                         <div className="flex items-center justify-between">
                             <label className="text-xs text-neutral-500 uppercase">Duration (s)</label>
-                            <DynToggle field="duration" />
+                            <Dyn field="duration" />
                         </div>
                         <input
-                            type="number"
-                            step="0.1"
+                            type="number" step="0.1"
                             value={selectedBlock.duration}
                             onChange={(e) => updateBlock(selectedBlock.id, { duration: parseFloat(e.target.value) || 0.1 })}
-                            className={`bg-neutral-800 border-none rounded px-2 py-1 text-sm text-neutral-200 focus:ring-1 focus:ring-blue-500 outline-none ${isFieldDynamic('duration') ? 'ring-1 ring-amber-500/30' : ''}`}
+                            className={inputCls('duration')}
                         />
                     </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                     <div className="flex flex-col gap-1">
-                        <label className="text-xs text-neutral-500 uppercase">Track</label>
+                        <div className="flex items-center justify-between">
+                            <label className="text-xs text-neutral-500 uppercase">Track</label>
+                            <Dyn field="track" />
+                        </div>
                         <input
-                            type="number"
-                            step="1"
+                            type="number" step="1"
                             value={selectedBlock.track}
                             onChange={(e) => updateBlock(selectedBlock.id, { track: parseInt(e.target.value) || 0 })}
-                            className="bg-neutral-800 border-none rounded px-2 py-1 text-sm text-neutral-200 focus:ring-1 focus:ring-blue-500 outline-none"
+                            className={inputCls('track')}
                         />
                     </div>
                 </div>
 
                 <hr className="border-neutral-800" />
 
-                {/* ==================== TEXT PROPERTIES ==================== */}
+                {/* ═══════ TEXT PROPERTIES ═══════ */}
                 {selectedBlock.type === 'text' && (
                     <div className="space-y-3">
                         <h3 className="text-xs font-bold text-amber-400 uppercase">Text Properties</h3>
                         <div className="flex flex-col gap-1">
                             <div className="flex items-center justify-between">
                                 <label className="text-xs text-neutral-500 uppercase">Content</label>
-                                <DynToggle field="text" label="text" />
+                                <Dyn field="text" />
                             </div>
                             <textarea
                                 value={selectedBlock.text || ''}
                                 onChange={(e) => updateBlock(selectedBlock.id, { text: e.target.value })}
-                                className="bg-neutral-800 border-none rounded px-2 py-1 text-sm text-neutral-200 focus:ring-1 focus:ring-amber-500 outline-none min-h-[80px] resize-none"
+                                className={`bg-neutral-800 border-none rounded px-2 py-1 text-sm text-neutral-200 focus:ring-1 focus:ring-amber-500 outline-none min-h-[80px] resize-none ${isFieldDynamic('text') ? 'ring-1 ring-orange-500/40' : ''}`}
                             />
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                             <div className="flex flex-col gap-1">
-                                <label className="text-xs text-neutral-500 uppercase">Font Size</label>
+                                <div className="flex items-center justify-between">
+                                    <label className="text-xs text-neutral-500 uppercase">Font Size</label>
+                                    <Dyn field="fontSize" />
+                                </div>
                                 <input
                                     type="number"
                                     value={selectedBlock.fontSize || 24}
                                     onChange={(e) => updateBlock(selectedBlock.id, { fontSize: parseInt(e.target.value) || 24 })}
-                                    className="bg-neutral-800 border-none rounded px-2 py-1 text-sm text-neutral-200 outline-none"
+                                    className={inputCls('fontSize')}
                                 />
                             </div>
                             <div className="flex flex-col gap-1">
-                                <label className="text-xs text-neutral-500 uppercase">Color</label>
+                                <div className="flex items-center justify-between">
+                                    <label className="text-xs text-neutral-500 uppercase">Color</label>
+                                    <Dyn field="color" />
+                                </div>
                                 <div className="flex gap-2">
                                     <input
                                         type="color"
@@ -225,83 +213,15 @@ export function PropertiesPanel() {
                                         type="text"
                                         value={selectedBlock.color || '#ffffff'}
                                         onChange={(e) => updateBlock(selectedBlock.id, { color: e.target.value })}
-                                        className="flex-1 bg-neutral-800 border-none rounded px-2 py-1 text-sm text-neutral-200 outline-none"
+                                        className={`flex-1 ${inputCls('color')}`}
                                     />
                                 </div>
                             </div>
                         </div>
-                    </div>
-                )}
 
-                {/* ==================== VIDEO / IMAGE PROPERTIES ==================== */}
-                {(selectedBlock.type === 'video' || selectedBlock.type === 'image') && (
-                    <div className="space-y-3">
-                        <h3 className={`text-xs font-bold uppercase ${selectedBlock.type === 'video' ? 'text-blue-400' : 'text-emerald-400'}`}>
-                            {selectedBlock.type === 'video' ? 'Video' : 'Image'} Source
-                        </h3>
-
-                        {/* Dynamic Toggle for Source */}
-                        <div className="flex items-center gap-2">
-                            <DynToggle field="source" />
-                            <input
-                                type="checkbox"
-                                id="dynamic-check"
-                                checked={!!placeholderName}
-                                onChange={(e) => toggleDynamic(e.target.checked)}
-                                className="rounded bg-neutral-800 border-neutral-700 text-blue-600 focus:ring-blue-500"
-                            />
-                            <label htmlFor="dynamic-check" className="text-sm text-neutral-300 font-medium">Dynamic (API Placeholder)</label>
-                        </div>
-
-                        {placeholderName ? (
-                            <div className="bg-neutral-800/50 p-3 rounded border border-blue-900/30 space-y-2">
-                                <div className="flex items-center justify-between">
-                                    <label className="text-xs text-blue-400 uppercase font-bold">
-                                        {`{{${placeholderName}}}`}
-                                    </label>
-                                    <span className="text-[10px] text-neutral-600 font-mono">Placeholder Key</span>
-                                </div>
-                                <div className="flex flex-col gap-1">
-                                    <label className="text-xs text-neutral-500 uppercase">Preview URL</label>
-                                    <input
-                                        type="text"
-                                        value={placeholders[placeholderName] || ''}
-                                        onChange={(e) => setPlaceholder(placeholderName, e.target.value || null)}
-                                        placeholder={`https://example.com/${selectedBlock.type === 'video' ? 'video.mp4' : 'image.jpg'}`}
-                                        className="bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-sm text-neutral-200 focus:ring-1 focus:ring-blue-500 outline-none"
-                                    />
-                                    <span className="text-[10px] text-neutral-600">
-                                        Paste a URL to preview. This value will be overridden by the API at render time.
-                                    </span>
-                                </div>
-                                {/* Preview thumbnail */}
-                                {placeholders[placeholderName] && selectedBlock.type === 'image' && (
-                                    <UrlPreviewThumb url={placeholders[placeholderName]!} type="image" />
-                                )}
-                                {placeholders[placeholderName] && selectedBlock.type === 'video' && (
-                                    <UrlPreviewThumb url={placeholders[placeholderName]!} type="video" />
-                                )}
-                            </div>
-                        ) : (
-                            <div className="flex flex-col gap-1">
-                                <label className="text-xs text-neutral-500 uppercase">Source URL</label>
-                                <input
-                                    type="text"
-                                    value={selectedBlock.source || ''}
-                                    onChange={(e) => updateBlock(selectedBlock.id, { source: e.target.value })}
-                                    placeholder={`https://bucket.example.com/${selectedBlock.type === 'video' ? 'video.mp4' : 'image.jpg'}`}
-                                    className="bg-neutral-800 border-none rounded px-2 py-1 text-sm text-neutral-200 focus:ring-1 focus:ring-blue-500 outline-none"
-                                />
-                                {/* Preview thumbnail for direct URL */}
-                                {selectedBlock.source && (selectedBlock.source.startsWith('http://') || selectedBlock.source.startsWith('https://')) && (
-                                    <UrlPreviewThumb url={selectedBlock.source} type={selectedBlock.type} />
-                                )}
-                            </div>
-                        )}
-
-                        {/* ── Subtitles ── */}
+                        {/* ── Subtitles (Text blocks only) ── */}
                         <hr className="border-neutral-800" />
-                        <h3 className="text-xs font-bold text-cyan-400 uppercase">Subtitles</h3>
+                        <h3 className="text-xs font-bold text-cyan-400 uppercase">Subtitles / VTT</h3>
 
                         <div className="flex items-center gap-2">
                             <input
@@ -316,18 +236,17 @@ export function PropertiesPanel() {
 
                         {selectedBlock.subtitleEnabled && (
                             <div className="space-y-3 bg-neutral-800/30 p-3 rounded border border-cyan-900/20">
-                                {/* VTT Input */}
                                 <div className="flex flex-col gap-1">
-                                    <label className="text-xs text-neutral-500 uppercase">VTT Source</label>
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-xs text-neutral-500 uppercase">VTT Source</label>
+                                        <Dyn field="subtitleSource" />
+                                    </div>
                                     <textarea
                                         value={selectedBlock.subtitleSource || ''}
                                         onChange={(e) => updateBlock(selectedBlock.id, { subtitleSource: e.target.value })}
-                                        placeholder={"Paste VTT content, URL to .vtt file, or {{placeholder}}\n\nWEBVTT\n\n00:00.000 --> 00:02.000\nHello World"}
-                                        className="bg-neutral-900 border border-neutral-700 rounded px-2 py-1.5 text-sm text-neutral-200 focus:ring-1 focus:ring-cyan-500 outline-none min-h-[100px] resize-none font-mono text-xs"
+                                        placeholder={"Paste VTT content or URL to .vtt file\n\nWEBVTT\n\n00:00.000 --> 00:02.000\nHello World"}
+                                        className={`bg-neutral-900 border border-neutral-700 rounded px-2 py-1.5 text-sm text-neutral-200 focus:ring-1 focus:ring-cyan-500 outline-none min-h-[100px] resize-none font-mono text-xs ${isFieldDynamic('subtitleSource') ? 'ring-1 ring-orange-500/40' : ''}`}
                                     />
-                                    <span className="text-[10px] text-neutral-600">
-                                        Accepts: VTT content, https://...file.vtt, or {'{{placeholder}}'}
-                                    </span>
                                 </div>
 
                                 {/* Style Reference */}
@@ -340,7 +259,7 @@ export function PropertiesPanel() {
                                     >
                                         <option value="">Default Style (white, 36px)</option>
                                         {template.timeline
-                                            .filter(b => b.type === 'text')
+                                            .filter(b => b.type === 'text' && b.id !== selectedBlock.id)
                                             .map(tb => (
                                                 <option key={tb.id} value={tb.id}>
                                                     {tb.text ? `"${tb.text.slice(0, 20)}${tb.text.length > 20 ? '...' : ''}"` : 'Untitled Text'} — {tb.fontSize || 24}px, {tb.color || '#fff'}
@@ -356,28 +275,61 @@ export function PropertiesPanel() {
                     </div>
                 )}
 
-                {/* ==================== AUDIO PROPERTIES ==================== */}
+                {/* ═══════ VIDEO / IMAGE PROPERTIES ═══════ */}
+                {(selectedBlock.type === 'video' || selectedBlock.type === 'image') && (
+                    <div className="space-y-3">
+                        <h3 className={`text-xs font-bold uppercase ${selectedBlock.type === 'video' ? 'text-blue-400' : 'text-emerald-400'}`}>
+                            {selectedBlock.type === 'video' ? 'Video' : 'Image'} Source
+                        </h3>
+
+                        <div className="flex flex-col gap-1">
+                            <div className="flex items-center justify-between">
+                                <label className="text-xs text-neutral-500 uppercase">Source URL</label>
+                                <Dyn field="source" />
+                            </div>
+                            <input
+                                type="text"
+                                value={selectedBlock.source || ''}
+                                onChange={(e) => updateBlock(selectedBlock.id, { source: e.target.value })}
+                                placeholder={`https://bucket.example.com/${selectedBlock.type === 'video' ? 'video.mp4' : 'image.jpg'}`}
+                                className={inputCls('source')}
+                            />
+                            {/* Preview thumbnail for direct URL */}
+                            {selectedBlock.source && (selectedBlock.source.startsWith('http://') || selectedBlock.source.startsWith('https://')) && (
+                                <UrlPreviewThumb url={selectedBlock.source} type={selectedBlock.type} />
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* ═══════ AUDIO PROPERTIES ═══════ */}
                 {selectedBlock.type === 'audio' && (
                     <div className="space-y-3">
                         <h3 className="text-xs font-bold text-purple-400 uppercase">Audio Properties</h3>
 
                         {/* Source */}
                         <div className="flex flex-col gap-1">
-                            <label className="text-xs text-neutral-500 uppercase">Source</label>
+                            <div className="flex items-center justify-between">
+                                <label className="text-xs text-neutral-500 uppercase">Source</label>
+                                <Dyn field="source" />
+                            </div>
                             <input
                                 type="text"
                                 value={selectedBlock.source || ''}
                                 onChange={(e) => updateBlock(selectedBlock.id, { source: e.target.value })}
-                                placeholder="Audio URL or {{placeholder}}"
-                                className="bg-neutral-800 border-none rounded px-2 py-1 text-sm text-neutral-200 focus:ring-1 focus:ring-purple-500 outline-none"
+                                placeholder="Audio URL"
+                                className={inputCls('source')}
                             />
                         </div>
 
                         {/* Volume */}
                         <div className="flex flex-col gap-1">
-                            <label className="text-xs text-neutral-500 uppercase flex items-center gap-1">
-                                <Volume2 size={12} /> Volume
-                            </label>
+                            <div className="flex items-center justify-between">
+                                <label className="text-xs text-neutral-500 uppercase flex items-center gap-1">
+                                    <Volume2 size={12} /> Volume
+                                </label>
+                                <Dyn field="volume" />
+                            </div>
                             <div className="flex items-center gap-2">
                                 <input
                                     type="range"
@@ -402,35 +354,10 @@ export function PropertiesPanel() {
                             />
                             <label htmlFor="loop-check" className="text-sm text-neutral-300 font-medium">Loop Audio</label>
                         </div>
-
-                        {/* Placeholder URL for Audio */}
-                        {placeholderName && (
-                            <div className="bg-neutral-800/50 p-3 rounded border border-purple-900/30 space-y-2">
-                                <div className="flex items-center justify-between">
-                                    <label className="text-xs text-purple-400 uppercase font-bold">
-                                        {`{{${placeholderName}}}`}
-                                    </label>
-                                    <span className="text-[10px] text-neutral-600 font-mono">Placeholder Key</span>
-                                </div>
-                                <div className="flex flex-col gap-1">
-                                    <label className="text-xs text-neutral-500 uppercase">Preview URL</label>
-                                    <input
-                                        type="text"
-                                        value={placeholders[placeholderName] || ''}
-                                        onChange={(e) => setPlaceholder(placeholderName, e.target.value || null)}
-                                        placeholder="https://example.com/audio.mp3"
-                                        className="bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-sm text-neutral-300 focus:ring-1 focus:ring-purple-500 outline-none"
-                                    />
-                                    <span className="text-[10px] text-neutral-600">
-                                        Paste a URL to preview. Overridden by API at render time.
-                                    </span>
-                                </div>
-                            </div>
-                        )}
                     </div>
                 )}
 
-                {/* ==================== APPEARANCE (Video/Image/Text only) ==================== */}
+                {/* ═══════ POSITION & SIZE (Video/Image/Text only) ═══════ */}
                 {selectedBlock.type !== 'audio' && (
                     <>
                         <hr className="border-neutral-800" />
@@ -438,41 +365,53 @@ export function PropertiesPanel() {
                             <h3 className="text-xs font-bold text-neutral-500 uppercase">Position & Size</h3>
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="flex flex-col gap-1">
-                                    <label className="text-xs text-neutral-500 uppercase">X</label>
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-xs text-neutral-500 uppercase">X</label>
+                                        <Dyn field="x" />
+                                    </div>
                                     <input
                                         type="number"
                                         value={selectedBlock.x || 0}
                                         onChange={(e) => updateBlock(selectedBlock.id, { x: parseFloat(e.target.value) || 0 })}
-                                        className="bg-neutral-800 border-none rounded px-2 py-1 text-sm text-neutral-200 outline-none"
+                                        className={inputCls('x')}
                                     />
                                 </div>
                                 <div className="flex flex-col gap-1">
-                                    <label className="text-xs text-neutral-500 uppercase">Y</label>
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-xs text-neutral-500 uppercase">Y</label>
+                                        <Dyn field="y" />
+                                    </div>
                                     <input
                                         type="number"
                                         value={selectedBlock.y || 0}
                                         onChange={(e) => updateBlock(selectedBlock.id, { y: parseFloat(e.target.value) || 0 })}
-                                        className="bg-neutral-800 border-none rounded px-2 py-1 text-sm text-neutral-200 outline-none"
+                                        className={inputCls('y')}
                                     />
                                 </div>
                                 <div className="flex flex-col gap-1">
-                                    <label className="text-xs text-neutral-500 uppercase">Width</label>
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-xs text-neutral-500 uppercase">Width</label>
+                                        <Dyn field="width" />
+                                    </div>
                                     <input
                                         type="number"
                                         value={selectedBlock.width || 0}
                                         placeholder="Auto"
                                         onChange={(e) => updateBlock(selectedBlock.id, { width: parseFloat(e.target.value) || 0 })}
-                                        className="bg-neutral-800 border-none rounded px-2 py-1 text-sm text-neutral-200 outline-none"
+                                        className={inputCls('width')}
                                     />
                                 </div>
                                 <div className="flex flex-col gap-1">
-                                    <label className="text-xs text-neutral-500 uppercase">Height</label>
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-xs text-neutral-500 uppercase">Height</label>
+                                        <Dyn field="height" />
+                                    </div>
                                     <input
                                         type="number"
                                         value={selectedBlock.height || 0}
                                         placeholder="Auto"
                                         onChange={(e) => updateBlock(selectedBlock.id, { height: parseFloat(e.target.value) || 0 })}
-                                        className="bg-neutral-800 border-none rounded px-2 py-1 text-sm text-neutral-200 outline-none"
+                                        className={inputCls('height')}
                                     />
                                 </div>
                             </div>
@@ -510,7 +449,6 @@ function UrlPreviewThumb({ url, type }: { url: string; type: string }) {
                     onError={(e) => {
                         const target = e.currentTarget;
                         if (!target.src.includes('/api/proxy-image')) {
-                            console.log('Thumbnail load failed (CORS?), retrying via proxy');
                             target.src = `/api/proxy-image?url=${encodeURIComponent(url)}`;
                         } else {
                             setStatus('error');
@@ -538,7 +476,6 @@ function UrlPreviewThumb({ url, type }: { url: string; type: string }) {
                     onError={(e) => {
                         const target = e.currentTarget;
                         if (!target.src.includes('/api/proxy-image')) {
-                            console.log('Video thumbnail failed (CORS?), retrying via proxy');
                             target.src = `/api/proxy-image?url=${encodeURIComponent(url)}`;
                         } else {
                             setStatus('error');

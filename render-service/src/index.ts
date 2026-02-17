@@ -261,6 +261,7 @@ interface Canvas {
     width: number;
     height: number;
     fps: number;
+    duration?: number; // Optional fixed duration
 }
 
 interface Asset {
@@ -279,6 +280,24 @@ interface RenderRequest {
     projectId?: string;
     source?: 'ui' | 'api';
 }
+
+// ── Auth Middleware ─────────────────────────────────────
+const requireAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const token = process.env.RENDER_ACCESS_TOKEN;
+    if (!token) {
+        // If no token is set in env, allow all (or warn)
+        // For security, strictly speaking we should block, but for dev we might allow.
+        // Given user request, we assume they will set it.
+        return next();
+    }
+
+    const authHeader = req.headers['x-render-access-token'];
+    if (!authHeader || authHeader !== token) {
+        console.warn(`[Auth] Unauthorized access attempt from ${req.ip}`);
+        return res.status(401).json({ error: 'Unauthorized: Invalid access token' });
+    }
+    next();
+};
 
 // ── Render Logic ────────────────────────────────────────
 const processRender = async (jobId: string, reqBody: RenderRequest) => {
@@ -411,7 +430,10 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
         }
 
         // base colour layer
-        const duration = Math.max(...activeBlocks.map((b) => b.start + b.duration));
+        // Use canvas.duration if provided, otherwise calculate from blocks
+        const calculatedDuration = Math.max(...activeBlocks.map((b) => b.start + b.duration));
+        const duration = canvas.duration || calculatedDuration;
+
         // Ensure duration is at least 1s to avoid ffmpeg errors
         const safeDuration = Math.max(duration, 1);
 
@@ -579,26 +601,21 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
 };
 
 // ── Render Endpoints ────────────────────────────────────
-app.post('/render', async (req, res) => {
+// Apply auth middleware to protect POST /render
+app.post('/render', requireAuth, async (req, res) => {
     try {
         const jobId = uuidv4();
         const body = req.body as RenderRequest;
 
         // Create Database Entry
         let dbId = undefined;
-        // Only insert if we have a userId or we want to log anonymous renders too (optional)
-        // Since the schema has user_id nullable, we can insert without it, but it's better if we have it.
         try {
-            // If userId is provided, ensure it's a valid uuid for auth.users FK
-            // If not provided, we can either skip DB insert or insert with null user_id (if FK allows)
-            // The migration allows null user_id.
-
             const { data: renderRow, error: dbError } = await supabase.from('renders').insert({
-                user_id: body.userId, // Can be undefined/null
-                template_id: body.templateId, // Can be undefined/null
-                project_id: body.projectId, // Can be undefined/null
+                user_id: body.userId,
+                template_id: body.templateId,
+                project_id: body.projectId,
                 render_job_id: jobId,
-                source: body.source || 'ui', // 'ui' or 'api'
+                source: body.source || 'ui',
                 status: 'pending',
                 resolution: body.template?.canvas ? `${body.template.canvas.width}x${body.template.canvas.height}` : undefined
             }).select().single();

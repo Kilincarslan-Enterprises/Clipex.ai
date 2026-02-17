@@ -7,7 +7,7 @@ export async function POST(req: Request) {
     try {
         const body = await req.json();
 
-        // Forward to Render Service
+        const RENDER_ACCESS_TOKEN = process.env.RENDER_ACCESS_TOKEN || '';
 
         console.log(`Forwarding render request to: ${RENDER_SERVICE_URL}/render`);
 
@@ -16,6 +16,7 @@ export async function POST(req: Request) {
             headers: {
                 'Content-Type': 'application/json',
                 'User-Agent': 'Clipex-Frontend/1.0',
+                ...(RENDER_ACCESS_TOKEN ? { 'X-Render-Access-Token': RENDER_ACCESS_TOKEN } : {}),
             },
             body: JSON.stringify(body),
         });

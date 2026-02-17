@@ -16,9 +16,10 @@ export const runtime = 'edge';
  *   "template_id": "uuid",
  *   "modifications": {
  *     "image_1.source": "https://...",
- *     "image_1.duration": 5
+ *     "image_1.duration": 5,
+ *     "template.duration": 30
  *   },
- *   "elements": [{ ...block }]  // optional: new elements to inject
+ *   "elements": [{ ...block }]
  * }
  */
 export async function POST(req: Request) {
@@ -50,12 +51,12 @@ export async function POST(req: Request) {
             );
         }
 
-        // Update last_used_at
+        // Update last_used_at (fire-and-forget)
         supabase
             .from('api_keys')
             .update({ last_used_at: new Date().toISOString() })
             .eq('id', keyRow.id)
-            .then(() => { }); // fire-and-forget
+            .then(() => { });
 
         // ── 2. Parse request body ──
         const body = await req.json();
@@ -82,7 +83,7 @@ export async function POST(req: Request) {
             );
         }
 
-        // Verify ownership: the API key's user must own the template
+        // Verify ownership
         if (project.user_id && project.user_id !== keyRow.user_id) {
             return NextResponse.json(
                 { error: 'You do not have access to this template' },
@@ -99,42 +100,57 @@ export async function POST(req: Request) {
         }
 
         // ── 4. Apply modifications ──
-        // modifications is an object like { "image_1.source": "https://...", "image_1.duration": 5 }
         const timeline = [...templateData.timeline];
+        const canvas = { ...templateData.canvas };
+        const templateDynamic = templateData.dynamic || {};
 
         if (modifications && typeof modifications === 'object') {
             for (const [key, value] of Object.entries(modifications)) {
                 const dotIndex = key.indexOf('.');
                 if (dotIndex === -1) {
                     return NextResponse.json(
-                        { error: `Invalid modification key "${key}". Expected format: "dynamicId.property"` },
+                        { error: `Invalid modification key "${key}". Expected format: "dynamicId.property" or "template.property"` },
                         { status: 400 }
                     );
                 }
 
-                const dynId = key.substring(0, dotIndex);
+                const target = key.substring(0, dotIndex);
                 const prop = key.substring(dotIndex + 1);
 
-                const blockIndex = timeline.findIndex((b: any) => b.dynamicId === dynId);
+                // ── Template-level modifications (e.g. template.duration) ──
+                if (target === 'template') {
+                    const templateFields = templateDynamic.dynamicFields || [];
+                    if (templateFields.length > 0 && !templateFields.includes(prop)) {
+                        return NextResponse.json(
+                            { error: `Property "${prop}" on template is not marked as dynamic. Dynamic fields: [${templateFields.join(', ')}]` },
+                            { status: 400 }
+                        );
+                    }
+                    canvas[prop] = value;
+                    continue;
+                }
+
+                // ── Block-level modifications ──
+                const blockIndex = timeline.findIndex((b: any) => b.dynamicId === target);
                 if (blockIndex === -1) {
                     return NextResponse.json(
-                        { error: `No block found with dynamicId "${dynId}"` },
+                        { error: `No block found with dynamicId "${target}"` },
                         { status: 400 }
                     );
                 }
 
-                // Check that the property is actually marked as dynamic
+                // Validate against dynamicFields
                 const block = timeline[blockIndex];
                 if (block.dynamicFields && Array.isArray(block.dynamicFields)) {
                     if (!block.dynamicFields.includes(prop)) {
                         return NextResponse.json(
-                            { error: `Property "${prop}" on block "${dynId}" is not marked as dynamic. Dynamic fields: [${block.dynamicFields.join(', ')}]` },
+                            { error: `Property "${prop}" on block "${target}" is not marked as dynamic. Dynamic fields: [${block.dynamicFields.join(', ')}]` },
                             { status: 400 }
                         );
                     }
                 }
 
-                // Apply the modification
+                // Apply modification (overrides the current value)
                 timeline[blockIndex] = { ...timeline[blockIndex], [prop]: value };
             }
         }
@@ -148,7 +164,6 @@ export async function POST(req: Request) {
                         { status: 400 }
                     );
                 }
-                // Generate ID if not provided
                 if (!el.id) {
                     el.id = crypto.randomUUID();
                 }
@@ -158,7 +173,7 @@ export async function POST(req: Request) {
 
         // ── 6. Build final template & proxy to render service ──
         const finalTemplate = {
-            canvas: templateData.canvas,
+            canvas,
             timeline,
         };
 
@@ -166,6 +181,8 @@ export async function POST(req: Request) {
             process.env.RENDER_SERVICE_URL ||
             process.env.NEXT_PUBLIC_RENDER_API_URL ||
             'http://localhost:3001';
+
+        const RENDER_ACCESS_TOKEN = process.env.RENDER_ACCESS_TOKEN || '';
 
         const renderPayload = {
             template: finalTemplate,
@@ -182,6 +199,7 @@ export async function POST(req: Request) {
             headers: {
                 'Content-Type': 'application/json',
                 'User-Agent': 'Clipex-API/1.0',
+                ...(RENDER_ACCESS_TOKEN ? { 'X-Render-Access-Token': RENDER_ACCESS_TOKEN } : {}),
             },
             body: JSON.stringify(renderPayload),
         });
@@ -196,7 +214,6 @@ export async function POST(req: Request) {
 
         const renderData = await renderResponse.json();
 
-        // Return job info + status polling URL
         return NextResponse.json({
             jobId: renderData.jobId,
             statusUrl: `${RENDER_SERVICE_URL}/status/${renderData.jobId}`,
