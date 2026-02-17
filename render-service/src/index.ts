@@ -234,6 +234,21 @@ const chunkSubtitleCues = (cues: SubtitleCue[], maxWordsPerChunk: number = 3): S
 };
 
 // ── Types ───────────────────────────────────────────────
+interface RenderAnimation {
+    id: string;
+    type: 'shake' | 'fade_in' | 'fade_out' | 'slide_in' | 'slide_out' | 'scale' | 'rotate' | 'bounce' | 'pulse';
+    time: number;       // relative to block start
+    duration: number;
+    easing?: string;
+    strength?: number;
+    frequency?: number;
+    direction?: 'left' | 'right' | 'top' | 'bottom';
+    startScale?: number;
+    endScale?: number;
+    angle?: number;
+    rotateDirection?: 'cw' | 'ccw';
+}
+
 interface Block {
     id: string;
     type: 'video' | 'image' | 'text' | 'audio';
@@ -255,6 +270,135 @@ interface Block {
     subtitleStyleId?: string;
     volume?: number;
     loop?: boolean;
+    animations?: RenderAnimation[];
+}
+
+// ── FFmpeg Animation Expression Builder ─────────────────
+// Generates overlay x/y offset expressions and extra filter chains for animations
+interface AnimExprResult {
+    xOffsetExpr: string;   // expression added to overlay x
+    yOffsetExpr: string;   // expression added to overlay y
+    // Extra filters to insert BEFORE the overlay (applied to the block's stream)
+    preFilters: string[];
+    // Extra filters to insert AFTER the overlay (applied to the composited stream)
+    postFilters: string[];
+}
+
+function buildAnimationExpressions(block: Block, canvasW: number, canvasH: number): AnimExprResult {
+    const result: AnimExprResult = { xOffsetExpr: '', yOffsetExpr: '', preFilters: [], postFilters: [] };
+    if (!block.animations || block.animations.length === 0) return result;
+
+    const xParts: string[] = [];
+    const yParts: string[] = [];
+
+    for (const anim of block.animations) {
+        // t is global time; block starts at block.start
+        // localT = t - block.start
+        // animStart = anim.time relative to block
+        // animEnd = anim.time + anim.duration
+        const bStart = block.start;
+        const aStart = bStart + anim.time;
+        const aEnd = aStart + anim.duration;
+        const aDur = anim.duration;
+        // FFmpeg expression for progress: (t - aStart) / aDur, clamped 0..1
+        // enable = between(t, aStart, aEnd)
+        const enableExpr = `between(t,${aStart},${aEnd})`;
+        const progressExpr = `(t-${aStart})/${aDur}`;
+
+        switch (anim.type) {
+            case 'shake': {
+                const str = anim.strength ?? 10;
+                const freq = anim.frequency ?? 8;
+                // decay = 1 - progress
+                // x += sin(2*PI*freq*t) * str * decay
+                // y += cos(2*PI*freq*0.7*t) * str * 0.5 * decay
+                xParts.push(`if(${enableExpr}, sin(2*PI*${freq}*t)*${str}*(1-${progressExpr}), 0)`);
+                yParts.push(`if(${enableExpr}, cos(2*PI*${freq}*0.7*t)*${str}*0.5*(1-${progressExpr}), 0)`);
+                break;
+            }
+            case 'slide_in': {
+                const dist = 300;
+                const remaining = `(1-${progressExpr})`;
+                switch (anim.direction) {
+                    case 'right': xParts.push(`if(${enableExpr}, ${dist}*${remaining}, 0)`); break;
+                    case 'top': yParts.push(`if(${enableExpr}, -${dist}*${remaining}, 0)`); break;
+                    case 'bottom': yParts.push(`if(${enableExpr}, ${dist}*${remaining}, 0)`); break;
+                    default: xParts.push(`if(${enableExpr}, -${dist}*${remaining}, 0)`); break; // left
+                }
+                break;
+            }
+            case 'slide_out': {
+                const dist = 300;
+                switch (anim.direction) {
+                    case 'right': xParts.push(`if(${enableExpr}, ${dist}*${progressExpr}, 0)`); break;
+                    case 'top': yParts.push(`if(${enableExpr}, -${dist}*${progressExpr}, 0)`); break;
+                    case 'bottom': yParts.push(`if(${enableExpr}, ${dist}*${progressExpr}, 0)`); break;
+                    default: xParts.push(`if(${enableExpr}, -${dist}*${progressExpr}, 0)`); break; // left
+                }
+                break;
+            }
+            case 'bounce': {
+                const str = anim.strength ?? 20;
+                const freq = anim.frequency ?? 3;
+                // y -= abs(sin(progress * freq * PI)) * str * decay
+                yParts.push(`if(${enableExpr}, -abs(sin(${progressExpr}*${freq}*PI))*${str}*(1-${progressExpr}), 0)`);
+                break;
+            }
+            case 'fade_in': {
+                // We handle fade via alpha on the block's stream before overlay
+                // Using format=rgba + colorchannelmixer with enable expression
+                result.postFilters.push(
+                    `fade=t=in:st=${aStart}:d=${aDur}:alpha=1`
+                );
+                break;
+            }
+            case 'fade_out': {
+                result.postFilters.push(
+                    `fade=t=out:st=${aStart}:d=${aDur}:alpha=1`
+                );
+                break;
+            }
+            // Scale, rotate, pulse are complex with FFmpeg expressions; 
+            // We implement them as zoompan/rotate on the block stream before overlay
+            case 'scale': {
+                const s0 = anim.startScale ?? 0;
+                const s1 = anim.endScale ?? 1;
+                // Use zoompan to animate scale (applied pre-overlay)
+                // zoom expression: if in animation window, interpolate between s0 and s1
+                // Outside window: 1
+                const zoomExpr = `if(${enableExpr}, ${s0}+(${s1}-${s0})*${progressExpr}, 1)`;
+                result.preFilters.push(
+                    `zoompan=z='${zoomExpr}':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${block.width || canvasW}x${block.height || canvasH}:fps=${30}`
+                );
+                break;
+            }
+            case 'rotate': {
+                const totalAngle = anim.angle ?? 360;
+                const dir = anim.rotateDirection === 'ccw' ? -1 : 1;
+                // rotate filter angle is in radians
+                const maxRad = (totalAngle * Math.PI / 180) * dir;
+                const rotExpr = `if(${enableExpr}, ${maxRad}*${progressExpr}, 0)`;
+                result.preFilters.push(
+                    `rotate=a='${rotExpr}':fillcolor=none:ow=rotw(iw):oh=roth(ih)`
+                );
+                break;
+            }
+            case 'pulse': {
+                const str = anim.strength ?? 0.2;
+                const freq = anim.frequency ?? 2;
+                const zoomExpr = `if(${enableExpr}, 1+sin(${progressExpr}*${freq}*2*PI)*${str}, 1)`;
+                result.preFilters.push(
+                    `zoompan=z='${zoomExpr}':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${block.width || canvasW}x${block.height || canvasH}:fps=${30}`
+                );
+                break;
+            }
+        }
+    }
+
+    if (xParts.length > 0) result.xOffsetExpr = '+' + xParts.join('+');
+    if (yParts.length > 0) result.yOffsetExpr = '+' + yParts.join('+');
+
+    return result;
 }
 
 interface Canvas {
@@ -457,8 +601,36 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
                     ? `,scale=${w && w > 0 ? w : -1}:${h && h > 0 ? h : -1}`
                     : '';
                 const pts = `setpts=PTS-STARTPTS+(${start}/TB)`;
-                filters.push(`[${idx}:v]trim=duration=${dur},${pts}${scale}[blk${labelCounter}]`);
-                filters.push(`${stream}[blk${labelCounter}]overlay=x=${x}:y=${y}:enable='between(t,${start},${end})'[${label}]`);
+
+                // Build animation expressions for this block
+                const animExprs = buildAnimationExpressions(block, canvas.width, canvas.height);
+
+                // Base block preparation (trim, pts, scale)
+                let blockStream = `[${idx}:v]trim=duration=${dur},${pts}${scale}`;
+
+                // Apply pre-filters (rotate, zoompan for scale/pulse)
+                if (animExprs.preFilters.length > 0) {
+                    blockStream += ',' + animExprs.preFilters.join(',');
+                }
+
+                blockStream += `[blk${labelCounter}]`;
+                filters.push(blockStream);
+
+                // Apply post-filters (fade) to block before overlay
+                if (animExprs.postFilters.length > 0) {
+                    const postLabel = `blkp${labelCounter}`;
+                    filters.push(`[blk${labelCounter}]${animExprs.postFilters.join(',')}[${postLabel}]`);
+                    // Overlay using post-processed block
+                    const xExpr = animExprs.xOffsetExpr ? `'${x}${animExprs.xOffsetExpr}'` : `${x}`;
+                    const yExpr = animExprs.yOffsetExpr ? `'${y}${animExprs.yOffsetExpr}'` : `${y}`;
+                    filters.push(`${stream}[${postLabel}]overlay=x=${xExpr}:y=${yExpr}:enable='between(t,${start},${end})'[${label}]`);
+                } else {
+                    // Overlay with animation offset expressions
+                    const xExpr = animExprs.xOffsetExpr ? `'${x}${animExprs.xOffsetExpr}'` : `${x}`;
+                    const yExpr = animExprs.yOffsetExpr ? `'${y}${animExprs.yOffsetExpr}'` : `${y}`;
+                    filters.push(`${stream}[blk${labelCounter}]overlay=x=${xExpr}:y=${yExpr}:enable='between(t,${start},${end})'[${label}]`);
+                }
+
                 stream = `[${label}]`;
                 labelCounter++;
 

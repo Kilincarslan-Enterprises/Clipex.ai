@@ -3,6 +3,7 @@
 import { useStore } from '@/lib/store';
 import { Trash2, Volume2, Loader2, Zap } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { AnimationsSection } from '@/components/properties/AnimationsSection';
 
 export function PropertiesPanel() {
     const {
@@ -417,6 +418,15 @@ export function PropertiesPanel() {
                             </div>
                         </div>
                     </>
+                )}
+
+                {/* ═══════ ANIMATIONS (Video/Image/Text) ═══════ */}
+                {selectedBlock.type !== 'audio' && (
+                    <AnimationsSection
+                        blockId={selectedBlock.id}
+                        toggleFieldDynamic={toggleFieldDynamic}
+                        isFieldDynamic={isFieldDynamic}
+                    />
                 )}
             </div>
         </div>
