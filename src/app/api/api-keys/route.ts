@@ -1,7 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { createAdminClient } from '@/utils/supabase/admin';
-import { randomBytes, createHash } from 'node:crypto';
+
+// Configure route to use Edge Runtime for Cloudflare Pages
+export const runtime = 'edge';
+
+/**
+ * Generate random bytes using Web Crypto API (Edge Runtime compatible)
+ */
+function generateRandomKey(length: number): string {
+    const array = new Uint8Array(length);
+    crypto.getRandomValues(array);
+    return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Hash a string using Web Crypto API (Edge Runtime compatible)
+ */
+async function hashString(input: string): Promise<string> {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(input);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
 
 /**
  * GET /api/api-keys - List all API keys for the current user
@@ -48,12 +70,12 @@ export async function POST(request: NextRequest) {
         const body = await request.json();
         const name = body.name || 'Default Key';
 
-        // Generate a random key: ck_<random_hex>
-        const rawKey = 'ck_' + randomBytes(32).toString('hex');
+        // Generate a random key: ck_<random_hex> using Web Crypto API
+        const rawKey = 'ck_' + generateRandomKey(32);
         const keyPrefix = rawKey.substring(0, 11); // "ck_" + first 8 hex chars
 
-        // Hash with node:crypto
-        const keyHash = createHash('sha256').update(rawKey).digest('hex');
+        // Hash with Web Crypto API
+        const keyHash = await hashString(rawKey);
 
         // Store in DB (use admin client to bypass RLS for insert with user_id)
         const admin = createAdminClient();
