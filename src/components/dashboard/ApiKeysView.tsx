@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { Key, Plus, Trash2, Loader2, Copy, Check, Eye, EyeOff, AlertTriangle } from 'lucide-react';
-import { createApiKey, listApiKeys, revokeApiKey } from '@/app/actions/api-keys';
 
 interface ApiKeyDisplay {
     id: string;
@@ -28,20 +27,38 @@ export default function ApiKeysView({ user }: { user: any }) {
 
     const fetchKeys = async () => {
         setLoading(true);
-        const data = await listApiKeys();
-        setKeys(data);
+        try {
+            const res = await fetch('/api/api-keys');
+            if (!res.ok) throw new Error('Failed to fetch');
+            const data = await res.json();
+            setKeys(data.keys || []);
+        } catch (err) {
+            console.error('List API keys error:', err);
+            setKeys([]);
+        }
         setLoading(false);
     };
 
     const handleCreate = async () => {
         setCreating(true);
-        const result = await createApiKey(newKeyName || 'Default Key');
+        try {
+            const res = await fetch('/api/api-keys', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newKeyName || 'Default Key' }),
+            });
 
-        if ('error' in result) {
-            alert(result.error);
-        } else {
-            setNewKeyRaw(result.key);
-            fetchKeys();
+            if (!res.ok) {
+                const err = await res.json();
+                alert(err.error || 'Failed to create API key');
+            } else {
+                const result = await res.json();
+                setNewKeyRaw(result.key);
+                fetchKeys();
+            }
+        } catch (err) {
+            console.error('Create API key error:', err);
+            alert('Failed to create API key');
         }
         setCreating(false);
     };
@@ -49,11 +66,17 @@ export default function ApiKeysView({ user }: { user: any }) {
     const handleRevoke = async (id: string) => {
         if (!confirm('Diesen API Key wirklich widerrufen? Alle Anfragen mit diesem Key werden danach fehlschlagen.')) return;
         setRevokingId(id);
-        const result = await revokeApiKey(id);
-        if (result.success) {
-            setKeys(prev => prev.filter(k => k.id !== id));
-        } else {
-            alert(result.error || 'Failed to revoke key');
+        try {
+            const res = await fetch(`/api/api-keys?id=${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                setKeys(prev => prev.filter(k => k.id !== id));
+            } else {
+                const err = await res.json();
+                alert(err.error || 'Failed to revoke key');
+            }
+        } catch (err) {
+            console.error('Revoke API key error:', err);
+            alert('Failed to revoke key');
         }
         setRevokingId(null);
     };
