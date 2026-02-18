@@ -557,7 +557,7 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
         // ─ Pre-resolve all sources (download remote assets once) ─
         const resolvedSources = new Map<string, string | null>();
         for (const block of activeBlocks) {
-            if ((block.type === 'video' || block.type === 'image') && block.source) {
+            if ((block.type === 'video' || block.type === 'image' || block.type === 'audio') && block.source) {
                 if (!resolvedSources.has(block.source)) {
                     const resolved = await resolveSource(block.source);
                     resolvedSources.set(block.source, resolved);
@@ -571,9 +571,9 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
         const inputMap = new Map<string, number>();
         let inputIdx = 0;
 
-        // add media inputs using pre-resolved paths
+        // add media inputs using pre-resolved paths (video, image, audio)
         for (const block of activeBlocks) {
-            if (block.type !== 'video' && block.type !== 'image') continue;
+            if (block.type !== 'video' && block.type !== 'image' && block.type !== 'audio') continue;
             const src = resolvedSources.get(block.source!) ?? null;
             if (!src || inputMap.has(src)) continue;
 
@@ -730,6 +730,80 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
             }
         }
 
+        // ─ Audio block handling ─────────────────────────────
+        const audioBlocks = activeBlocks.filter(b => b.type === 'audio');
+        const audioStreamLabels: string[] = [];
+
+        for (const block of audioBlocks) {
+            const src = resolvedSources.get(block.source!) ?? null;
+            if (!src || !inputMap.has(src)) continue;
+            const idx = inputMap.get(src)!;
+
+            const aLabel = `aud${labelCounter}`;
+            const vol = typeof block.volume === 'number' ? block.volume / 100 : 1;
+            const start = block.start || 0;
+            const dur = block.duration || 0;
+
+            // Trim audio to block duration, delay it to block.start, then set volume
+            // asetpts shifts audio forward in time; adelay is simpler and more reliable
+            let audioFilter = `[${idx}:a]atrim=0:${dur},asetpts=PTS-STARTPTS`;
+
+            // Apply volume
+            if (vol !== 1) {
+                audioFilter += `,volume=${vol}`;
+            }
+
+            // Use adelay to position audio at the correct start time (ms)
+            if (start > 0) {
+                const delayMs = Math.round(start * 1000);
+                audioFilter += `,adelay=${delayMs}|${delayMs}`;
+            }
+
+            audioFilter += `[${aLabel}]`;
+            filters.push(audioFilter);
+            audioStreamLabels.push(`[${aLabel}]`);
+            labelCounter++;
+        }
+
+        // Also capture audio from video blocks that have audio tracks
+        const videoBlocksWithAudio = activeBlocks.filter(b => b.type === 'video' && b.source);
+        for (const block of videoBlocksWithAudio) {
+            const src = resolvedSources.get(block.source!) ?? null;
+            if (!src || !inputMap.has(src)) continue;
+            const idx = inputMap.get(src)!;
+
+            const aLabel = `vidaud${labelCounter}`;
+            const start = block.start || 0;
+            const dur = block.duration || 0;
+            const vol = typeof block.volume === 'number' ? block.volume / 100 : 1;
+
+            // Try to use audio from video input; wrap in a try since some videos may have no audio
+            let vAudioFilter = `[${idx}:a]atrim=0:${dur},asetpts=PTS-STARTPTS`;
+            if (vol !== 1) {
+                vAudioFilter += `,volume=${vol}`;
+            }
+            if (start > 0) {
+                const delayMs = Math.round(start * 1000);
+                vAudioFilter += `,adelay=${delayMs}|${delayMs}`;
+            }
+            vAudioFilter += `[${aLabel}]`;
+            filters.push(vAudioFilter);
+            audioStreamLabels.push(`[${aLabel}]`);
+            labelCounter++;
+        }
+
+        // Mix all audio streams together
+        let audioStream: string | null = null;
+        if (audioStreamLabels.length > 0) {
+            if (audioStreamLabels.length === 1) {
+                audioStream = audioStreamLabels[0];
+            } else {
+                const mixedLabel = `amixed`;
+                filters.push(`${audioStreamLabels.join('')}amix=inputs=${audioStreamLabels.length}:duration=longest:dropout_transition=0[${mixedLabel}]`);
+                audioStream = `[${mixedLabel}]`;
+            }
+        }
+
         // output
         const outName = `render_${jobId}.mp4`;
         const outPath = path.join(RENDERS_DIR, outName);
@@ -745,15 +819,24 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
 
         await new Promise<void>((resolve, reject) => {
             cmd
-                .complexFilter(filters)
-                .map(stream)
-                .outputOptions([
-                    '-c:v libx264',
-                    '-pix_fmt yuv420p',
-                    `-r ${canvas.fps}`,
-                    '-preset veryfast', // Optimized for speed
-                    '-movflags +faststart'
-                ])
+                .complexFilter(filters);
+
+            // Map video stream
+            cmd.map(stream);
+
+            // Map audio stream if we have one
+            if (audioStream) {
+                cmd.map(audioStream);
+            }
+
+            cmd.outputOptions([
+                '-c:v libx264',
+                '-pix_fmt yuv420p',
+                `-r ${canvas.fps}`,
+                '-preset veryfast', // Optimized for speed
+                '-movflags +faststart',
+                ...(audioStream ? ['-c:a aac', '-b:a 192k'] : ['-an']),
+            ])
                 .output(outPath)
                 .on('start', (cmdLine: string) => {
                     console.log(`[${jobId}] Ffmpeg spawned: ${cmdLine}`);
