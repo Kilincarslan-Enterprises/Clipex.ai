@@ -174,17 +174,69 @@ export function PropertiesPanel() {
                 {selectedBlock.type === 'text' && (
                     <div className="space-y-3">
                         <h3 className="text-xs font-bold text-amber-400 uppercase">Text Properties</h3>
+
+                        {/* ── Mode Toggle: Text / Subtitles ── */}
                         <div className="flex flex-col gap-1">
-                            <div className="flex items-center justify-between">
-                                <label className="text-xs text-neutral-500 uppercase">Content</label>
-                                <Dyn field="text" />
+                            <label className="text-xs text-neutral-500 uppercase">Mode</label>
+                            <div className="flex rounded-lg overflow-hidden border border-neutral-700 bg-neutral-800">
+                                <button
+                                    onClick={() => updateBlock(selectedBlock.id, { subtitleEnabled: false })}
+                                    className={`flex-1 px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition-all ${!selectedBlock.subtitleEnabled
+                                            ? 'bg-amber-500/20 text-amber-400 border-r border-neutral-700'
+                                            : 'text-neutral-500 hover:text-neutral-300 border-r border-neutral-700'
+                                        }`}
+                                >
+                                    Text
+                                </button>
+                                <button
+                                    onClick={() => updateBlock(selectedBlock.id, { subtitleEnabled: true })}
+                                    className={`flex-1 px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition-all ${selectedBlock.subtitleEnabled
+                                            ? 'bg-cyan-500/20 text-cyan-400'
+                                            : 'text-neutral-500 hover:text-neutral-300'
+                                        }`}
+                                >
+                                    Subtitles
+                                </button>
                             </div>
-                            <textarea
-                                value={selectedBlock.text || ''}
-                                onChange={(e) => updateBlock(selectedBlock.id, { text: e.target.value })}
-                                className={`bg-neutral-800 border-none rounded px-2 py-1 text-sm text-neutral-200 focus:ring-1 focus:ring-amber-500 outline-none min-h-[80px] resize-none ${isFieldDynamic('text') ? 'ring-1 ring-orange-500/40' : ''}`}
-                            />
                         </div>
+
+                        {/* ── Content: Text Mode ── */}
+                        {!selectedBlock.subtitleEnabled && (
+                            <div className="flex flex-col gap-1">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-xs text-neutral-500 uppercase">Content</label>
+                                    <Dyn field="text" />
+                                </div>
+                                <textarea
+                                    value={selectedBlock.text || ''}
+                                    onChange={(e) => updateBlock(selectedBlock.id, { text: e.target.value })}
+                                    className={`bg-neutral-800 border-none rounded px-2 py-1 text-sm text-neutral-200 focus:ring-1 focus:ring-amber-500 outline-none min-h-[80px] resize-none ${isFieldDynamic('text') ? 'ring-1 ring-orange-500/40' : ''}`}
+                                />
+                            </div>
+                        )}
+
+                        {/* ── Content: Subtitles Mode ── */}
+                        {selectedBlock.subtitleEnabled && (
+                            <div className="space-y-3 bg-neutral-800/30 p-3 rounded border border-cyan-900/20">
+                                <div className="flex flex-col gap-1">
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-xs text-neutral-500 uppercase">VTT Source</label>
+                                        <Dyn field="subtitleSource" />
+                                    </div>
+                                    <textarea
+                                        value={selectedBlock.subtitleSource || ''}
+                                        onChange={(e) => updateBlock(selectedBlock.id, { subtitleSource: e.target.value })}
+                                        placeholder={"Paste VTT content here\n\nWEBVTT\n\n00:00.000 --> 00:02.000\nHello World\n\n00:02.000 --> 00:05.000\nThis is a subtitle"}
+                                        className={`bg-neutral-900 border border-neutral-700 rounded px-2 py-1.5 text-sm text-neutral-200 focus:ring-1 focus:ring-cyan-500 outline-none min-h-[100px] resize-none font-mono text-xs ${isFieldDynamic('subtitleSource') ? 'ring-1 ring-orange-500/40' : ''}`}
+                                    />
+                                </div>
+                                <span className="text-[10px] text-neutral-600 block">
+                                    Paste WebVTT content. Subtitles will use Font Size &amp; Color settings from below.
+                                </span>
+                            </div>
+                        )}
+
+                        {/* ── Styling (always visible) ── */}
                         <div className="grid grid-cols-2 gap-3">
                             <div className="flex flex-col gap-1">
                                 <div className="flex items-center justify-between">
@@ -219,60 +271,6 @@ export function PropertiesPanel() {
                                 </div>
                             </div>
                         </div>
-
-                        {/* ── Subtitles (Text blocks only) ── */}
-                        <hr className="border-neutral-800" />
-                        <h3 className="text-xs font-bold text-cyan-400 uppercase">Subtitles / VTT</h3>
-
-                        <div className="flex items-center gap-2">
-                            <input
-                                type="checkbox"
-                                id="subtitle-enable"
-                                checked={selectedBlock.subtitleEnabled || false}
-                                onChange={(e) => updateBlock(selectedBlock.id, { subtitleEnabled: e.target.checked })}
-                                className="rounded bg-neutral-800 border-neutral-700 text-cyan-600 focus:ring-cyan-500"
-                            />
-                            <label htmlFor="subtitle-enable" className="text-sm text-neutral-300 font-medium">Enable Subtitles</label>
-                        </div>
-
-                        {selectedBlock.subtitleEnabled && (
-                            <div className="space-y-3 bg-neutral-800/30 p-3 rounded border border-cyan-900/20">
-                                <div className="flex flex-col gap-1">
-                                    <div className="flex items-center justify-between">
-                                        <label className="text-xs text-neutral-500 uppercase">VTT Source</label>
-                                        <Dyn field="subtitleSource" />
-                                    </div>
-                                    <textarea
-                                        value={selectedBlock.subtitleSource || ''}
-                                        onChange={(e) => updateBlock(selectedBlock.id, { subtitleSource: e.target.value })}
-                                        placeholder={"Paste VTT content or URL to .vtt file\n\nWEBVTT\n\n00:00.000 --> 00:02.000\nHello World"}
-                                        className={`bg-neutral-900 border border-neutral-700 rounded px-2 py-1.5 text-sm text-neutral-200 focus:ring-1 focus:ring-cyan-500 outline-none min-h-[100px] resize-none font-mono text-xs ${isFieldDynamic('subtitleSource') ? 'ring-1 ring-orange-500/40' : ''}`}
-                                    />
-                                </div>
-
-                                {/* Style Reference */}
-                                <div className="flex flex-col gap-1">
-                                    <label className="text-xs text-neutral-500 uppercase">Subtitle Style (from Text Block)</label>
-                                    <select
-                                        className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-sm text-neutral-300 focus:ring-1 focus:ring-cyan-500 outline-none"
-                                        value={selectedBlock.subtitleStyleId || ''}
-                                        onChange={(e) => updateBlock(selectedBlock.id, { subtitleStyleId: e.target.value || undefined })}
-                                    >
-                                        <option value="">Default Style (white, 36px)</option>
-                                        {template.timeline
-                                            .filter(b => b.type === 'text' && b.id !== selectedBlock.id)
-                                            .map(tb => (
-                                                <option key={tb.id} value={tb.id}>
-                                                    {tb.text ? `"${tb.text.slice(0, 20)}${tb.text.length > 20 ? '...' : ''}"` : 'Untitled Text'} — {tb.fontSize || 24}px, {tb.color || '#fff'}
-                                                </option>
-                                            ))}
-                                    </select>
-                                    <span className="text-[10px] text-neutral-600">
-                                        Inherits font size, color, and background from the selected text block
-                                    </span>
-                                </div>
-                            </div>
-                        )}
                     </div>
                 )}
 

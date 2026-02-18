@@ -3,6 +3,7 @@
 import { useStore } from '@/lib/store';
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import type { Block, Animation, AnimationEasing } from '@/types';
+import { parseVtt, getActiveCueText } from '@/lib/vtt';
 
 // ── Animation Helpers ───────────────────────────────────
 function easingFn(t: number, easing: AnimationEasing = 'ease_in_out'): number {
@@ -292,9 +293,17 @@ export function CanvasPreview() {
                 }
 
                 if (block.type === 'text') {
+                    // If subtitle mode is enabled, parse VTT and show current cue
+                    let displayText = textContent;
+                    if (block.subtitleEnabled && block.subtitleSource) {
+                        const cues = parseVtt(block.subtitleSource);
+                        const blockLocalTime = currentTime - block.start;
+                        displayText = getActiveCueText(cues, blockLocalTime);
+                    }
+
                     return (
                         <div key={block.id} style={style}>
-                            {textContent}
+                            {displayText}
                         </div>
                     );
                 }
