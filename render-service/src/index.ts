@@ -296,19 +296,28 @@ function buildAnimationExpressions(block: Block, canvasW: number, canvasH: numbe
         // localT = t - block.start
         // animStart = anim.time relative to block
         // animEnd = anim.time + anim.duration
-        const bStart = block.start;
-        const aStart = bStart + anim.time;
-        const aEnd = aStart + anim.duration;
-        const aDur = anim.duration;
+        const bStart = block.start || 0;
+        const animTime = typeof anim.time === 'number' && !isNaN(anim.time) ? anim.time : 0;
+        const animDuration = typeof anim.duration === 'number' && !isNaN(anim.duration) ? anim.duration : 1;
+        const aStart = bStart + animTime;
+        const aEnd = aStart + animDuration;
+        const aDur = animDuration;
         // FFmpeg expression for progress: (t - aStart) / aDur, clamped 0..1
         // enable = between(t, aStart, aEnd)
         const enableExpr = `between(t,${aStart},${aEnd})`;
         const progressExpr = `(t-${aStart})/${aDur}`;
 
+        // Sanitize numeric values – strip units like 'Hz' that might leak from the frontend
+        const sanitizeNum = (v: any, fallback: number): number => {
+            if (typeof v === 'number' && !isNaN(v)) return v;
+            if (typeof v === 'string') { const n = parseFloat(v); return isNaN(n) ? fallback : n; }
+            return fallback;
+        };
+
         switch (anim.type) {
             case 'shake': {
-                const str = anim.strength ?? 10;
-                const freq = anim.frequency ?? 8;
+                const str = sanitizeNum(anim.strength, 10);
+                const freq = sanitizeNum(anim.frequency, 8);
                 // decay = 1 - progress
                 // x += sin(2*PI*freq*t) * str * decay
                 // y += cos(2*PI*freq*0.7*t) * str * 0.5 * decay
@@ -338,8 +347,8 @@ function buildAnimationExpressions(block: Block, canvasW: number, canvasH: numbe
                 break;
             }
             case 'bounce': {
-                const str = anim.strength ?? 20;
-                const freq = anim.frequency ?? 3;
+                const str = sanitizeNum(anim.strength, 20);
+                const freq = sanitizeNum(anim.frequency, 3);
                 // y -= abs(sin(progress * freq * PI)) * str * decay
                 yParts.push(`if(${enableExpr}, -abs(sin(${progressExpr}*${freq}*PI))*${str}*(1-${progressExpr}), 0)`);
                 break;
@@ -384,8 +393,8 @@ function buildAnimationExpressions(block: Block, canvasW: number, canvasH: numbe
                 break;
             }
             case 'pulse': {
-                const str = anim.strength ?? 0.2;
-                const freq = anim.frequency ?? 2;
+                const str = sanitizeNum(anim.strength, 0.2);
+                const freq = sanitizeNum(anim.frequency, 2);
                 const zoomExpr = `if(${enableExpr}, 1+sin(${progressExpr}*${freq}*2*PI)*${str}, 1)`;
                 result.preFilters.push(
                     `zoompan=z='${zoomExpr}':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${block.width || canvasW}x${block.height || canvasH}:fps=${30}`
@@ -464,7 +473,13 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
         const { template, assets, placeholders } = reqBody;
         const { canvas, timeline } = template;
 
+        // Sanitize blocks: ensure start/duration are valid numbers
         const activeBlocks = timeline
+            .map((b) => ({
+                ...b,
+                start: typeof b.start === 'number' && !isNaN(b.start) ? b.start : 0,
+                duration: typeof b.duration === 'number' && !isNaN(b.duration) ? b.duration : 0,
+            }))
             .filter((b) => b.duration > 0)
             .sort((a, b) => a.track - b.track);
 
@@ -575,11 +590,12 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
 
         // base colour layer
         // Use canvas.duration if provided, otherwise calculate from blocks
-        const calculatedDuration = Math.max(...activeBlocks.map((b) => b.start + b.duration));
+        const blockEnds = activeBlocks.map((b) => (b.start || 0) + (b.duration || 0)).filter(v => !isNaN(v) && isFinite(v));
+        const calculatedDuration = blockEnds.length > 0 ? Math.max(...blockEnds) : 1;
         const duration = canvas.duration || calculatedDuration;
 
-        // Ensure duration is at least 1s to avoid ffmpeg errors
-        const safeDuration = Math.max(duration, 1);
+        // Ensure duration is at least 1s and is a valid number to avoid ffmpeg errors
+        const safeDuration = (!isNaN(duration) && isFinite(duration)) ? Math.max(duration, 1) : Math.max(calculatedDuration, 1);
 
         cmd.input(`color=c=black:s=${canvas.width}x${canvas.height}:d=${safeDuration}`).inputFormat('lavfi');
         const baseIdx = inputIdx++;
