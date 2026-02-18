@@ -672,16 +672,45 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
                     }
                 }
             } else if (block.type === 'text') {
-                const escaped = (block.text || '').replace(/:/g, '\\:').replace(/'/g, '');
                 const { start, duration: dur, x = 0, y = 0, fontSize = 24, color = 'white', backgroundColor } = block;
                 const end = start + dur;
                 const fontOpt = FONT_PATH ? `:fontfile=${FONT_PATH}` : '';
-                let dt = `${stream}drawtext=text='${escaped}'${fontOpt}:x=${x}:y=${y}:fontsize=${fontSize}:fontcolor=${color}:enable='between(t,${start},${end})'`;
-                if (backgroundColor) dt += `:box=1:boxcolor=${backgroundColor}`;
-                dt += `[${label}]`;
-                filters.push(dt);
-                stream = `[${label}]`;
-                labelCounter++;
+
+                // ─ Subtitle mode: parse VTT and generate per-cue drawtext ─
+                if (block.subtitleEnabled && block.subtitleSource) {
+                    const vttContent = await resolveVTT(block.subtitleSource);
+                    if (vttContent) {
+                        const rawCues = parseVTT(vttContent);
+                        const cues = chunkSubtitleCues(rawCues);
+
+                        for (const cue of cues) {
+                            const subLabel = `sub${labelCounter}`;
+                            const escaped = cue.text.replace(/:/g, '\\:').replace(/'/g, '');
+                            // Offset cue times by block start so they align with the global timeline
+                            const cueStart = start + cue.start;
+                            const cueEnd = Math.min(start + cue.end, end);
+                            // Center horizontally at block position, use block y for vertical
+                            let dt = `${stream}drawtext=text='${escaped}'${fontOpt}:x=${x}+(w-text_w)/2:y=${y}:fontsize=${fontSize}:fontcolor=${color}:enable='between(t,${cueStart},${cueEnd})'`;
+                            if (backgroundColor) dt += `:box=1:boxcolor=${backgroundColor}:boxborderw=8`;
+                            dt += `[${subLabel}]`;
+                            filters.push(dt);
+                            stream = `[${subLabel}]`;
+                            labelCounter++;
+                        }
+                    } else {
+                        // VTT could not be resolved, skip this block
+                        console.warn(`[${jobId}] Could not resolve VTT for text block ${block.id}`);
+                    }
+                } else {
+                    // ─ Normal static text ─
+                    const escaped = (block.text || '').replace(/:/g, '\\:').replace(/'/g, '');
+                    let dt = `${stream}drawtext=text='${escaped}'${fontOpt}:x=${x}:y=${y}:fontsize=${fontSize}:fontcolor=${color}:enable='between(t,${start},${end})'`;
+                    if (backgroundColor) dt += `:box=1:boxcolor=${backgroundColor}`;
+                    dt += `[${label}]`;
+                    filters.push(dt);
+                    stream = `[${label}]`;
+                    labelCounter++;
+                }
             }
         }
 
