@@ -22,15 +22,47 @@ function parseTimestamp(ts: string): number {
 }
 
 /**
+ * Normalize VTT input that may come as a JSON-encoded string (e.g. from API).
+ * When VTT passes through JSON.stringify / JSON.parse, newlines become literal
+ * two-character sequences `\n` instead of real newline characters.
+ * This function detects that and converts them back.
+ */
+function normalizeVttInput(raw: string): string {
+    // 1. If it looks like a JSON string (starts with "), try to parse it
+    const trimmed = raw.trim();
+    if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+        try {
+            const parsed = JSON.parse(trimmed);
+            if (typeof parsed === 'string') return parsed;
+        } catch { /* not valid JSON, continue */ }
+    }
+
+    // 2. If there are no real newlines but there are literal \n sequences,
+    //    the content was likely JSON-escaped without wrapping quotes.
+    if (!raw.includes('\n') && raw.includes('\\n')) {
+        return raw
+            .replace(/\\r\\n/g, '\n')
+            .replace(/\\n/g, '\n')
+            .replace(/\\r/g, '\n');
+    }
+
+    return raw;
+}
+
+/**
  * Parse a WebVTT string into an array of SubtitleCue objects.
  * Supports standard WEBVTT format with optional cue identifiers.
+ * Also accepts JSON-stringified VTT (where newlines are escaped as \n).
  */
 export function parseVtt(vttString: string): SubtitleCue[] {
     if (!vttString || !vttString.trim()) return [];
 
+    // Handle JSON-encoded input (literal \n instead of real newlines)
+    const normalized = normalizeVttInput(vttString);
+
     const cues: SubtitleCue[] = [];
     // Normalize line endings
-    const lines = vttString.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+    const lines = normalized.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
 
     let i = 0;
 

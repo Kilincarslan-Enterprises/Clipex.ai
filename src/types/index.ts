@@ -53,8 +53,8 @@ export interface Block {
   // Position & Dimensions
   x?: number;
   y?: number;
-  width?: number;
-  height?: number;
+  width?: number | string;  // Percentage (e.g. "100%") or pixels. "100%" = full canvas. Default: "100%"
+  height?: number | string; // Percentage (e.g. "100%") or pixels. "100%" = full canvas. Default: "100%"
   // Content
   source?: string; // URL
   text?: string; // Text content

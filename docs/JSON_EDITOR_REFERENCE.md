@@ -67,8 +67,8 @@ Diese Parameter gelten für alle sichtbaren Elemente.
 |---|---|---|---|
 | `x` | number | Horizontale Position (Pixel) von links. | `0` |
 | `y` | number | Vertikale Position (Pixel) von oben. | `0` |
-| `width` | number | Breite des Elements (Pixel). | - |
-| `height` | number | Höhe des Elements (Pixel). | - |
+| `width` | string \| number | Breite: `"100%"` = volle Canvas-Breite, `"50%"` = halbe Breite, `"120%"` = gezoomt. Pixelwerte (z.B. `500`) auch möglich. | `"100%"` |
+| `height` | string \| number | Höhe: `"100%"` = volle Canvas-Höhe. Prozent oder Pixel. | `"100%"` |
 
 ---
 
@@ -236,8 +236,8 @@ Können Sie diesen beim Rendern ändern:
       "duration": 10,
       "x": 0,
       "y": 0,
-      "width": 1080,
-      "height": 1920,
+      "width": "100%",
+      "height": "100%",
       "source": "https://example.com/background.mp4",
       "volume": 0,
       "loop": true
@@ -250,7 +250,7 @@ Können Sie diesen beim Rendern ändern:
       "duration": 5,
       "x": 100,
       "y": 200,
-      "width": 880,
+      "width": "80%",
       "height": 200,
       "text": "Willkommen bei Clipix",
       "fontSize": 80,
@@ -266,8 +266,8 @@ Können Sie diesen beim Rendern ändern:
       "duration": 2,
       "x": 390,
       "y": 810,
-      "width": 300,
-      "height": 300,
+      "width": "30%",
+      "height": "15%",
       "source": "https://example.com/logo.png"
     }
   ],

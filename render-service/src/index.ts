@@ -166,9 +166,38 @@ const parseVTTTimestamp = (ts: string): number => {
     return hours * 3600 + minutes * 60 + seconds;
 };
 
+/**
+ * Normalize VTT input that may come as a JSON-encoded string (e.g. from API).
+ * When VTT passes through JSON.stringify / JSON.parse, newlines become literal
+ * two-character sequences `\n` instead of real newline characters.
+ */
+const normalizeVttInput = (raw: string): string => {
+    // 1. If it looks like a JSON string (starts with "), try to parse it
+    const trimmed = raw.trim();
+    if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+        try {
+            const parsed = JSON.parse(trimmed);
+            if (typeof parsed === 'string') return parsed;
+        } catch { /* not valid JSON, continue */ }
+    }
+
+    // 2. If there are no real newlines but there are literal \n sequences,
+    //    the content was likely JSON-escaped without wrapping quotes.
+    if (!raw.includes('\n') && raw.includes('\\n')) {
+        return raw
+            .replace(/\\r\\n/g, '\n')
+            .replace(/\\n/g, '\n')
+            .replace(/\\r/g, '\n');
+    }
+
+    return raw;
+};
+
 const parseVTT = (vttContent: string): SubtitleCue[] => {
     const cues: SubtitleCue[] = [];
-    const lines = vttContent.replace(/\r\n/g, '\n').split('\n');
+    // Handle JSON-encoded input (literal \n instead of real newlines)
+    const normalized = normalizeVttInput(vttContent);
+    const lines = normalized.replace(/\r\n/g, '\n').split('\n');
     let i = 0;
 
     // Skip WEBVTT header
@@ -259,8 +288,8 @@ interface Block {
     track: number;
     x?: number;
     y?: number;
-    width?: number;
-    height?: number;
+    width?: number | string;  // Percentage (e.g. "100%") or pixels
+    height?: number | string; // Percentage (e.g. "100%") or pixels
     fontSize?: number;
     color?: string;
     backgroundColor?: string;
@@ -557,7 +586,7 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
         // ─ Pre-resolve all sources (download remote assets once) ─
         const resolvedSources = new Map<string, string | null>();
         for (const block of activeBlocks) {
-            if ((block.type === 'video' || block.type === 'image') && block.source) {
+            if ((block.type === 'video' || block.type === 'image' || block.type === 'audio') && block.source) {
                 if (!resolvedSources.has(block.source)) {
                     const resolved = await resolveSource(block.source);
                     resolvedSources.set(block.source, resolved);
@@ -571,9 +600,9 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
         const inputMap = new Map<string, number>();
         let inputIdx = 0;
 
-        // add media inputs using pre-resolved paths
+        // add media inputs using pre-resolved paths (video, image, audio)
         for (const block of activeBlocks) {
-            if (block.type !== 'video' && block.type !== 'image') continue;
+            if (block.type !== 'video' && block.type !== 'image' && block.type !== 'audio') continue;
             const src = resolvedSources.get(block.source!) ?? null;
             if (!src || inputMap.has(src)) continue;
 
@@ -611,10 +640,27 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
                 const src = resolvedSources.get(block.source!) ?? null;
                 if (!src || !inputMap.has(src)) continue;
                 const idx = inputMap.get(src)!;
-                const { start, duration: dur, x = 0, y = 0, width: w, height: h } = block;
+                const { start, duration: dur, x = 0, y = 0 } = block;
                 const end = start + dur;
-                const scale = w && w > 0 || h && h > 0
-                    ? `,scale=${w && w > 0 ? w : -1}:${h && h > 0 ? h : -1}`
+
+                // Resolve width/height: percentage → pixels, 0/undefined → canvas size
+                const resolveDimPx = (val: number | string | undefined, canvasDim: number): number => {
+                    if (val === undefined || val === null || val === 0 || val === '') return canvasDim;
+                    if (typeof val === 'string') {
+                        if (val.endsWith('%')) {
+                            return Math.round((parseFloat(val) / 100) * canvasDim);
+                        }
+                        const n = parseFloat(val);
+                        return isNaN(n) || n <= 0 ? canvasDim : n;
+                    }
+                    return val > 0 ? val : canvasDim;
+                };
+                const w = resolveDimPx(block.width, canvas.width);
+                const h = resolveDimPx(block.height, canvas.height);
+
+                // Only add scale filter if dimensions differ from canvas
+                const scale = (w !== canvas.width || h !== canvas.height)
+                    ? `,scale=${w}:${h}`
                     : '';
                 const pts = `setpts=PTS-STARTPTS+(${start}/TB)`;
 
@@ -730,6 +776,80 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
             }
         }
 
+        // ─ Audio block handling ─────────────────────────────
+        const audioBlocks = activeBlocks.filter(b => b.type === 'audio');
+        const audioStreamLabels: string[] = [];
+
+        for (const block of audioBlocks) {
+            const src = resolvedSources.get(block.source!) ?? null;
+            if (!src || !inputMap.has(src)) continue;
+            const idx = inputMap.get(src)!;
+
+            const aLabel = `aud${labelCounter}`;
+            const vol = typeof block.volume === 'number' ? block.volume / 100 : 1;
+            const start = block.start || 0;
+            const dur = block.duration || 0;
+
+            // Trim audio to block duration, delay it to block.start, then set volume
+            // asetpts shifts audio forward in time; adelay is simpler and more reliable
+            let audioFilter = `[${idx}:a]atrim=0:${dur},asetpts=PTS-STARTPTS`;
+
+            // Apply volume
+            if (vol !== 1) {
+                audioFilter += `,volume=${vol}`;
+            }
+
+            // Use adelay to position audio at the correct start time (ms)
+            if (start > 0) {
+                const delayMs = Math.round(start * 1000);
+                audioFilter += `,adelay=${delayMs}|${delayMs}`;
+            }
+
+            audioFilter += `[${aLabel}]`;
+            filters.push(audioFilter);
+            audioStreamLabels.push(`[${aLabel}]`);
+            labelCounter++;
+        }
+
+        // Also capture audio from video blocks that have audio tracks
+        const videoBlocksWithAudio = activeBlocks.filter(b => b.type === 'video' && b.source);
+        for (const block of videoBlocksWithAudio) {
+            const src = resolvedSources.get(block.source!) ?? null;
+            if (!src || !inputMap.has(src)) continue;
+            const idx = inputMap.get(src)!;
+
+            const aLabel = `vidaud${labelCounter}`;
+            const start = block.start || 0;
+            const dur = block.duration || 0;
+            const vol = typeof block.volume === 'number' ? block.volume / 100 : 1;
+
+            // Try to use audio from video input; wrap in a try since some videos may have no audio
+            let vAudioFilter = `[${idx}:a]atrim=0:${dur},asetpts=PTS-STARTPTS`;
+            if (vol !== 1) {
+                vAudioFilter += `,volume=${vol}`;
+            }
+            if (start > 0) {
+                const delayMs = Math.round(start * 1000);
+                vAudioFilter += `,adelay=${delayMs}|${delayMs}`;
+            }
+            vAudioFilter += `[${aLabel}]`;
+            filters.push(vAudioFilter);
+            audioStreamLabels.push(`[${aLabel}]`);
+            labelCounter++;
+        }
+
+        // Mix all audio streams together
+        let audioStream: string | null = null;
+        if (audioStreamLabels.length > 0) {
+            if (audioStreamLabels.length === 1) {
+                audioStream = audioStreamLabels[0];
+            } else {
+                const mixedLabel = `amixed`;
+                filters.push(`${audioStreamLabels.join('')}amix=inputs=${audioStreamLabels.length}:duration=longest:dropout_transition=0[${mixedLabel}]`);
+                audioStream = `[${mixedLabel}]`;
+            }
+        }
+
         // output
         const outName = `render_${jobId}.mp4`;
         const outPath = path.join(RENDERS_DIR, outName);
@@ -745,15 +865,24 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
 
         await new Promise<void>((resolve, reject) => {
             cmd
-                .complexFilter(filters)
-                .map(stream)
-                .outputOptions([
-                    '-c:v libx264',
-                    '-pix_fmt yuv420p',
-                    `-r ${canvas.fps}`,
-                    '-preset veryfast', // Optimized for speed
-                    '-movflags +faststart'
-                ])
+                .complexFilter(filters);
+
+            // Map video stream
+            cmd.map(stream);
+
+            // Map audio stream if we have one
+            if (audioStream) {
+                cmd.map(audioStream);
+            }
+
+            cmd.outputOptions([
+                '-c:v libx264',
+                '-pix_fmt yuv420p',
+                `-r ${canvas.fps}`,
+                '-preset veryfast', // Optimized for speed
+                '-movflags +faststart',
+                ...(audioStream ? ['-c:a aac', '-b:a 192k'] : ['-an']),
+            ])
                 .output(outPath)
                 .on('start', (cmdLine: string) => {
                     console.log(`[${jobId}] Ffmpeg spawned: ${cmdLine}`);

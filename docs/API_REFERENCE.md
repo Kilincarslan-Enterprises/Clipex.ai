@@ -74,7 +74,7 @@ Keys follow the format `<dynamicId>.<property>` for blocks, or `template.<proper
 **Block-level** (`<dynamicId>.`):
 | Block Type | Available Properties |
 |---|---|
-| All | `start`, `duration`, `track`, `x`, `y`, `width`, `height` |
+| All | `start`, `duration`, `track`, `x`, `y`, `width` (string \| number, e.g. `"100%"`), `height` (string \| number, e.g. `"100%"`) |
 | `video` / `image` | `source` |
 | `text` | `text`, `fontSize`, `color`, `subtitleSource` |
 | `audio` | `source`, `volume` |

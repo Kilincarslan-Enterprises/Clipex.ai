@@ -131,6 +131,7 @@ export function CanvasPreview() {
     const { template, currentTime, placeholders, isPlaying, setCurrentTime } = useStore();
     const canvasRef = useRef<HTMLDivElement>(null);
     const [loadErrors, setLoadErrors] = useState<Record<string, boolean>>({});
+    const audioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
 
     // Simple playback loop
     useEffect(() => {
@@ -209,6 +210,65 @@ export function CanvasPreview() {
     // Sort by track (z-index)
     visibleBlocks.sort((a, b) => a.track - b.track);
 
+    // ── Audio playback sync ─────────────────────────────
+    const visibleAudioBlocks = visibleBlocks.filter(b => b.type === 'audio');
+    const visibleAudioIds = new Set(visibleAudioBlocks.map(b => b.id));
+
+    useEffect(() => {
+        // Pause audio elements that are no longer visible
+        for (const [id, el] of audioRefs.current.entries()) {
+            if (!visibleAudioIds.has(id)) {
+                el.pause();
+            }
+        }
+
+        // Sync active audio blocks
+        for (const block of visibleAudioBlocks) {
+            const sourceUrl = resolveSource(block.source);
+            if (!sourceUrl) continue;
+
+            let el = audioRefs.current.get(block.id);
+            if (!el) {
+                el = new Audio();
+                el.crossOrigin = 'anonymous';
+                audioRefs.current.set(block.id, el);
+            }
+
+            // Update source if changed
+            if (el.src !== sourceUrl && !el.src.endsWith(sourceUrl)) {
+                el.src = sourceUrl;
+            }
+
+            // Volume (0-100 → 0-1)
+            el.volume = Math.max(0, Math.min(1, (block.volume ?? 100) / 100));
+            el.loop = block.loop ?? false;
+
+            // Sync time
+            const relativeTime = currentTime - block.start;
+            if (Math.abs(el.currentTime - relativeTime) > 0.3) {
+                el.currentTime = relativeTime;
+            }
+
+            if (isPlaying) {
+                el.play().catch(() => { });
+            } else {
+                el.pause();
+            }
+        }
+    }, [currentTime, isPlaying, visibleAudioBlocks.map(b => `${b.id}:${b.source}:${b.volume}:${b.loop}`).join(',')]);
+
+    // Cleanup all audio on unmount
+    useEffect(() => {
+        return () => {
+            for (const el of audioRefs.current.values()) {
+                el.pause();
+                el.src = '';
+            }
+            audioRefs.current.clear();
+        };
+    }, []);
+
+
     return (
         <div
             ref={canvasRef}
@@ -221,14 +281,25 @@ export function CanvasPreview() {
                 const sourceUrl = resolveSource(block.source);
                 const textContent = resolveText(block.text);
 
+                // Helper: resolve dimension (percentage or pixel)
+                const resolveDim = (val: number | string | undefined): string | number => {
+                    if (val === undefined || val === null || val === 0 || val === '') return '100%';
+                    if (typeof val === 'string') {
+                        if (val.endsWith('%')) return val; // Pass through percentage strings
+                        const n = parseFloat(val);
+                        return isNaN(n) ? '100%' : n;
+                    }
+                    return val; // raw pixel number
+                };
+
                 // Base styles
                 const animStyle = computeAnimationStyle(block, currentTime);
                 const style: React.CSSProperties = {
                     position: 'absolute',
                     left: block.x ?? 0,
                     top: block.y ?? 0,
-                    width: block.width || '100%',
-                    height: block.height || '100%',
+                    width: resolveDim(block.width),
+                    height: resolveDim(block.height),
                     zIndex: block.track,
                     backgroundColor: block.backgroundColor,
                     color: block.color ?? 'white',
@@ -304,6 +375,19 @@ export function CanvasPreview() {
                     return (
                         <div key={block.id} style={style}>
                             {displayText}
+                        </div>
+                    );
+                }
+
+                if (block.type === 'audio') {
+                    // Audio blocks are handled via the useEffect above (invisible playback).
+                    // Show a small visual indicator on the canvas.
+                    return (
+                        <div key={block.id} style={{ ...style, width: 120, height: 40, left: 8, bottom: 8, top: 'auto', background: 'rgba(168,85,247,0.15)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: 8, fontSize: 11, gap: 4, pointerEvents: 'none' }}>
+                            <span>🔊</span>
+                            <span className="text-purple-300 truncate" style={{ maxWidth: 80 }}>
+                                {sourceUrl ? 'Audio' : 'No source'}
+                            </span>
                         </div>
                     );
                 }
