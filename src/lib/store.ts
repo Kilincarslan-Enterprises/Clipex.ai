@@ -16,6 +16,7 @@ interface StoreState {
     // Actions
     setTemplate: (template: Template) => void;
     updateCanvas: (updates: Partial<CanvasSettings>) => void;
+    toggleTemplateDynamic: (field: string) => void;
     updateBlock: (id: string, updates: Partial<Block>) => void;
     addBlock: (block: Block) => void;
     removeBlock: (id: string) => void;
@@ -62,6 +63,22 @@ export const useStore = create<StoreState>((set) => ({
                 canvas: { ...state.template.canvas, ...updates },
             },
         })),
+
+    toggleTemplateDynamic: (field) =>
+        set((state) => {
+            const current = state.template.dynamic?.dynamicFields || [];
+            const newFields = current.includes(field)
+                ? current.filter(f => f !== field)
+                : [...current, field];
+            return {
+                template: {
+                    ...state.template,
+                    dynamic: newFields.length > 0
+                        ? { ...state.template.dynamic, dynamicFields: newFields }
+                        : undefined,
+                },
+            };
+        }),
 
     updateBlock: (id, updates) =>
         set((state) => ({
@@ -153,7 +170,8 @@ export const useStore = create<StoreState>((set) => ({
             // Reconstruct template 
             const template: Template = {
                 canvas: payload.canvas || DEFAULT_TEMPLATE.canvas,
-                timeline: payload.timeline || []
+                timeline: payload.timeline || [],
+                ...(payload.dynamic ? { dynamic: payload.dynamic } : {}),
             };
 
             set({

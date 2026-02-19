@@ -325,7 +325,7 @@ export function CanvasPreview() {
             }}
             className="relative w-full h-full flex items-center justify-center overflow-hidden"
             style={{
-                background: 'repeating-conic-gradient(#1a1a1a 0% 25%, #111 0% 50%) 50% / 20px 20px',
+                background: '#0a0a0a',
             }}
         >
             <div
@@ -336,7 +336,8 @@ export function CanvasPreview() {
                     transformOrigin: 'center center',
                     position: 'relative',
                     overflow: 'hidden',
-                    background: '#000',
+                    // Checkered transparency pattern (like Photoshop)
+                    background: 'repeating-conic-gradient(#2a2a2a 0% 25%, #1e1e1e 0% 50%) 50% / 24px 24px',
                     flexShrink: 0,
                 }}
             >

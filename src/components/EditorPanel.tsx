@@ -31,7 +31,7 @@ export function EditorPanel() {
     const supabase = createClient();
     const [userId, setUserId] = useState<string | null>(null);
 
-    const { addBlock, currentTime, template, placeholders, projectId, updateCanvas } = useStore();
+    const { addBlock, currentTime, template, placeholders, projectId, updateCanvas, toggleTemplateDynamic } = useStore();
 
     const [renderProgress, setRenderProgress] = useState(0);
     const [showApiModal, setShowApiModal] = useState(false);
@@ -343,7 +343,24 @@ export function EditorPanel() {
                     </div>
 
                     {/* ── Global Duration Input ── */}
-                    <div className="flex items-center gap-1 bg-neutral-800 border border-neutral-700 rounded px-2 py-1">
+                    <div className={`flex items-center gap-1 rounded px-2 py-1 ${(template.dynamic?.dynamicFields || []).includes('duration')
+                            ? 'bg-amber-500/10 border border-amber-500/30'
+                            : 'bg-neutral-800 border border-neutral-700'
+                        }`}>
+                        <button
+                            onClick={() => toggleTemplateDynamic('duration')}
+                            className={`p-0.5 rounded transition-colors ${(template.dynamic?.dynamicFields || []).includes('duration')
+                                    ? 'text-amber-400 hover:text-amber-300'
+                                    : 'text-neutral-600 hover:text-neutral-400'
+                                }`}
+                            title={
+                                (template.dynamic?.dynamicFields || []).includes('duration')
+                                    ? 'Duration is dynamic (API-overridable) — click to make static'
+                                    : 'Make duration dynamic (API-overridable)'
+                            }
+                        >
+                            <Zap size={12} />
+                        </button>
                         <Clock size={12} className="text-neutral-500" />
                         <input
                             type="number"
