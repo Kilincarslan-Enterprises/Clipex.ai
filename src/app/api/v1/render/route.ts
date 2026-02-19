@@ -126,7 +126,20 @@ export async function POST(req: Request) {
                             { status: 400 }
                         );
                     }
-                    canvas[prop] = value;
+                    // Coerce numeric canvas properties (duration, width, height, fps)
+                    const numericCanvasFields = ['duration', 'width', 'height', 'fps'];
+                    if (numericCanvasFields.includes(prop)) {
+                        const numVal = Number(value);
+                        if (isNaN(numVal)) {
+                            return NextResponse.json(
+                                { error: `Property "template.${prop}" must be a number, got "${value}"` },
+                                { status: 400 }
+                            );
+                        }
+                        canvas[prop] = numVal;
+                    } else {
+                        canvas[prop] = value;
+                    }
                     continue;
                 }
 
@@ -150,8 +163,20 @@ export async function POST(req: Request) {
                     }
                 }
 
-                // Apply modification (overrides the current value)
-                timeline[blockIndex] = { ...timeline[blockIndex], [prop]: value };
+                // Apply modification — coerce numeric properties
+                const numericBlockFields = ['duration', 'start', 'track', 'x', 'y', 'fontSize', 'volume'];
+                let finalValue = value;
+                if (numericBlockFields.includes(prop) && typeof value !== 'number') {
+                    const numVal = Number(value);
+                    if (isNaN(numVal)) {
+                        return NextResponse.json(
+                            { error: `Property "${prop}" on block "${target}" must be a number, got "${value}"` },
+                            { status: 400 }
+                        );
+                    }
+                    finalValue = numVal;
+                }
+                timeline[blockIndex] = { ...timeline[blockIndex], [prop]: finalValue };
             }
         }
 

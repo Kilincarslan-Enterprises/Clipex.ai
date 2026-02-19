@@ -242,12 +242,15 @@ export function EditorPanel() {
 
     // Generate API request JSON
     const generateApiJson = () => {
-        const modifications: Record<string, string> = {};
+        const modifications: Record<string, string | number> = {};
+
+        // Numeric fields that should be shown as numbers, not strings
+        const numericFields = new Set(['duration', 'start', 'track', 'x', 'y', 'fontSize', 'volume']);
 
         // Template-level dynamic fields (e.g. template.duration)
         const templateDynFields = template.dynamic?.dynamicFields || [];
         for (const field of templateDynFields) {
-            modifications[`template.${field}`] = `<${field}_value>`;
+            modifications[`template.${field}`] = numericFields.has(field) ? 30 : `<${field}_value>`;
         }
 
         // Block-level dynamic fields
@@ -256,7 +259,7 @@ export function EditorPanel() {
         );
         for (const block of dynamicBlocks) {
             for (const field of (block.dynamicFields || [])) {
-                modifications[`${block.dynamicId}.${field}`] = `<${field}_value>`;
+                modifications[`${block.dynamicId}.${field}`] = numericFields.has(field) ? 0 : `<${field}_value>`;
             }
         }
         return JSON.stringify({
@@ -344,14 +347,14 @@ export function EditorPanel() {
 
                     {/* ── Global Duration Input ── */}
                     <div className={`flex items-center gap-1 rounded px-2 py-1 ${(template.dynamic?.dynamicFields || []).includes('duration')
-                            ? 'bg-amber-500/10 border border-amber-500/30'
-                            : 'bg-neutral-800 border border-neutral-700'
+                        ? 'bg-amber-500/10 border border-amber-500/30'
+                        : 'bg-neutral-800 border border-neutral-700'
                         }`}>
                         <button
                             onClick={() => toggleTemplateDynamic('duration')}
                             className={`p-0.5 rounded transition-colors ${(template.dynamic?.dynamicFields || []).includes('duration')
-                                    ? 'text-amber-400 hover:text-amber-300'
-                                    : 'text-neutral-600 hover:text-neutral-400'
+                                ? 'text-amber-400 hover:text-amber-300'
+                                : 'text-neutral-600 hover:text-neutral-400'
                                 }`}
                             title={
                                 (template.dynamic?.dynamicFields || []).includes('duration')

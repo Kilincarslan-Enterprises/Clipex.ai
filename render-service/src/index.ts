@@ -742,6 +742,23 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
                 const end = start + dur;
                 const fontOpt = FONT_PATH ? `:fontfile=${FONT_PATH}` : '';
 
+                // Resolve block height for vertical centering (match CSS flexbox center)
+                const resolveDimPx = (val: number | string | undefined, canvasDim: number): number => {
+                    if (val === undefined || val === null || val === 0 || val === '') return canvasDim;
+                    if (typeof val === 'string') {
+                        if (val.endsWith('%')) return Math.round((parseFloat(val) / 100) * canvasDim);
+                        const n = parseFloat(val);
+                        return isNaN(n) || n <= 0 ? canvasDim : n;
+                    }
+                    return val > 0 ? val : canvasDim;
+                };
+                const blockW = resolveDimPx(block.width, canvas.width);
+                const blockH = resolveDimPx(block.height, canvas.height);
+                // Center text vertically within the block area (matches CSS alignItems: center)
+                const textCenterY = Math.round(y + (blockH - fontSize) / 2);
+                // Center text horizontally within the block area (matches CSS justifyContent: center)
+                const textCenterX = `${x}+(${blockW}-text_w)/2`;
+
                 // ─ Subtitle mode: parse VTT and generate per-cue drawtext ─
                 if (block.subtitleEnabled && block.subtitleSource) {
                     const vttContent = await resolveVTT(block.subtitleSource);
@@ -755,8 +772,8 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
                             // Offset cue times by block start so they align with the global timeline
                             const cueStart = start + cue.start;
                             const cueEnd = Math.min(start + cue.end, end);
-                            // Center horizontally at block position, use block y for vertical
-                            let dt = `${stream}drawtext=text='${escaped}'${fontOpt}:x=${x}+(w-text_w)/2:y=${y}:fontsize=${fontSize}:fontcolor=${color}:enable='between(t,${cueStart},${cueEnd})'`;
+                            // Center text within block area (matches preview CSS centering)
+                            let dt = `${stream}drawtext=text='${escaped}'${fontOpt}:x=${textCenterX}:y=${textCenterY}:fontsize=${fontSize}:fontcolor=${color}:enable='between(t,${cueStart},${cueEnd})'`;
                             if (backgroundColor) dt += `:box=1:boxcolor=${backgroundColor}:boxborderw=8`;
                             dt += `[${subLabel}]`;
                             filters.push(dt);
@@ -770,7 +787,7 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
                 } else {
                     // ─ Normal static text ─
                     const escaped = (block.text || '').replace(/:/g, '\\:').replace(/'/g, '');
-                    let dt = `${stream}drawtext=text='${escaped}'${fontOpt}:x=${x}:y=${y}:fontsize=${fontSize}:fontcolor=${color}:enable='between(t,${start},${end})'`;
+                    let dt = `${stream}drawtext=text='${escaped}'${fontOpt}:x=${textCenterX}:y=${textCenterY}:fontsize=${fontSize}:fontcolor=${color}:enable='between(t,${start},${end})'`;
                     if (backgroundColor) dt += `:box=1:boxcolor=${backgroundColor}`;
                     dt += `[${label}]`;
                     filters.push(dt);
