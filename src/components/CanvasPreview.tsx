@@ -277,141 +277,182 @@ export function CanvasPreview() {
         };
     }, []);
 
+    // ── WYSIWYG Scaling ────────────────────────────────────
+    // We render the inner canvas at the EXACT canvas resolution (e.g. 1080x1920)
+    // and use CSS transform: scale() to fit it into the available UI space.
+    // This ensures pixel-perfect WYSIWYG: fontSize, x, y, width, height all
+    // match the final rendered output proportionally.
+    const wrapperRef = useRef<HTMLDivElement>(null);
+    const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
+
+    useEffect(() => {
+        const el = wrapperRef.current;
+        if (!el) return;
+        const ro = new ResizeObserver((entries) => {
+            const entry = entries[0];
+            if (entry) {
+                setContainerSize({ w: entry.contentRect.width, h: entry.contentRect.height });
+            }
+        });
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
+
+    const canvasW = template.canvas.width || 1080;
+    const canvasH = template.canvas.height || 1920;
+    const scale = containerSize.w > 0 && containerSize.h > 0
+        ? Math.min(containerSize.w / canvasW, containerSize.h / canvasH)
+        : 1;
 
     return (
         <div
-            ref={canvasRef}
-            className="relative bg-black w-full h-full overflow-hidden"
-            style={{
-                aspectRatio: `${template.canvas.width} / ${template.canvas.height}`,
+            ref={(el) => {
+                // Assign both refs
+                (wrapperRef as any).current = el;
+                (canvasRef as any).current = el;
             }}
+            className="relative w-full h-full flex items-center justify-center overflow-hidden"
+            style={{ background: '#000' }}
         >
-            {visibleBlocks.map((block) => {
-                const sourceUrl = resolveSource(block.source);
-                const textContent = resolveText(block.text);
+            <div
+                style={{
+                    width: canvasW,
+                    height: canvasH,
+                    transform: `scale(${scale})`,
+                    transformOrigin: 'center center',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    background: '#000',
+                    flexShrink: 0,
+                }}
+            >
+                {visibleBlocks.map((block) => {
+                    const sourceUrl = resolveSource(block.source);
+                    const textContent = resolveText(block.text);
 
-                // Helper: resolve dimension (percentage or pixel)
-                const resolveDim = (val: number | string | undefined): string | number => {
-                    if (val === undefined || val === null || val === 0 || val === '') return '100%';
-                    if (typeof val === 'string') {
-                        if (val.endsWith('%')) return val; // Pass through percentage strings
-                        const n = parseFloat(val);
-                        return isNaN(n) ? '100%' : n;
-                    }
-                    return val; // raw pixel number
-                };
+                    // Helper: resolve dimension (percentage or pixel)
+                    const resolveDim = (val: number | string | undefined): string | number => {
+                        if (val === undefined || val === null || val === 0 || val === '') return '100%';
+                        if (typeof val === 'string') {
+                            if (val.endsWith('%')) return val; // Pass through percentage strings
+                            const n = parseFloat(val);
+                            return isNaN(n) ? '100%' : n;
+                        }
+                        return val; // raw pixel number
+                    };
 
-                // Base styles
-                const animStyle = computeAnimationStyle(block, currentTime);
-                const style: React.CSSProperties = {
-                    position: 'absolute',
-                    left: block.x ?? 0,
-                    top: block.y ?? 0,
-                    width: resolveDim(block.width),
-                    height: resolveDim(block.height),
-                    zIndex: block.track,
-                    backgroundColor: block.backgroundColor,
-                    color: block.color ?? 'white',
-                    fontSize: block.fontSize ?? 24,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    pointerEvents: 'none',
-                    ...animStyle,
-                };
+                    // Base styles
+                    const animStyle = computeAnimationStyle(block, currentTime);
+                    const style: React.CSSProperties = {
+                        position: 'absolute',
+                        left: block.x ?? 0,
+                        top: block.y ?? 0,
+                        width: resolveDim(block.width),
+                        height: resolveDim(block.height),
+                        zIndex: block.track,
+                        backgroundColor: block.backgroundColor,
+                        color: block.color ?? 'white',
+                        fontSize: block.fontSize ?? 24,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        pointerEvents: 'none',
+                        ...animStyle,
+                    };
 
-                if (block.type === 'video' && sourceUrl) {
-                    return (
-                        <div key={block.id} style={style}>
-                            <video
-                                src={sourceUrl}
-                                className="w-full h-full object-cover"
-                                ref={(el) => {
-                                    if (el) {
-                                        const relativeTime = currentTime - block.start;
-                                        if (Math.abs(el.currentTime - relativeTime) > 0.3) {
-                                            el.currentTime = relativeTime;
-                                        }
-                                        if (isPlaying) {
-                                            el.play().catch(() => { });
-                                        } else {
-                                            el.pause();
-                                        }
-                                    }
-                                }}
-                                muted
-                                playsInline
-                                crossOrigin="anonymous"
-                                onError={(e) => handleMediaError(e, sourceUrl)}
-                            />
-                        </div>
-                    );
-                }
-
-                if (block.type === 'image' && sourceUrl) {
-                    return (
-                        <div key={block.id} style={style}>
-                            {loadErrors[block.id] ? (
-                                <div className="flex flex-col items-center gap-1 text-red-400 text-xs">
-                                    <span>⚠ Failed to load</span>
-                                    <span className="text-neutral-600 text-[10px] max-w-[160px] truncate">{sourceUrl}</span>
-                                </div>
-                            ) : (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                    id={block.id}
+                    if (block.type === 'video' && sourceUrl) {
+                        return (
+                            <div key={block.id} style={style}>
+                                <video
                                     src={sourceUrl}
-                                    alt=""
                                     className="w-full h-full object-cover"
+                                    ref={(el) => {
+                                        if (el) {
+                                            const relativeTime = currentTime - block.start;
+                                            if (Math.abs(el.currentTime - relativeTime) > 0.3) {
+                                                el.currentTime = relativeTime;
+                                            }
+                                            if (isPlaying) {
+                                                el.play().catch(() => { });
+                                            } else {
+                                                el.pause();
+                                            }
+                                        }
+                                    }}
+                                    muted
+                                    playsInline
                                     crossOrigin="anonymous"
                                     onError={(e) => handleMediaError(e, sourceUrl)}
-                                    onLoad={() => handleImageLoad(block.id)}
                                 />
-                            )}
-                        </div>
-                    );
-                }
-
-                if (block.type === 'text') {
-                    // If subtitle mode is enabled, parse VTT and show current cue
-                    let displayText = textContent;
-                    if (block.subtitleEnabled && block.subtitleSource) {
-                        const cues = parseVtt(block.subtitleSource);
-                        const blockLocalTime = currentTime - block.start;
-                        displayText = getActiveCueText(cues, blockLocalTime);
+                            </div>
+                        );
                     }
 
+                    if (block.type === 'image' && sourceUrl) {
+                        return (
+                            <div key={block.id} style={style}>
+                                {loadErrors[block.id] ? (
+                                    <div className="flex flex-col items-center gap-1 text-red-400 text-xs">
+                                        <span>⚠ Failed to load</span>
+                                        <span className="text-neutral-600 text-[10px] max-w-[160px] truncate">{sourceUrl}</span>
+                                    </div>
+                                ) : (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img
+                                        id={block.id}
+                                        src={sourceUrl}
+                                        alt=""
+                                        className="w-full h-full object-cover"
+                                        crossOrigin="anonymous"
+                                        onError={(e) => handleMediaError(e, sourceUrl)}
+                                        onLoad={() => handleImageLoad(block.id)}
+                                    />
+                                )}
+                            </div>
+                        );
+                    }
+
+                    if (block.type === 'text') {
+                        // If subtitle mode is enabled, parse VTT and show current cue
+                        let displayText = textContent;
+                        if (block.subtitleEnabled && block.subtitleSource) {
+                            const cues = parseVtt(block.subtitleSource);
+                            const blockLocalTime = currentTime - block.start;
+                            displayText = getActiveCueText(cues, blockLocalTime);
+                        }
+
+                        return (
+                            <div key={block.id} style={style}>
+                                {displayText}
+                            </div>
+                        );
+                    }
+
+                    if (block.type === 'audio') {
+                        // Audio blocks are handled via the useEffect above (invisible playback).
+                        // Show a small visual indicator on the canvas.
+                        return (
+                            <div key={block.id} style={{ ...style, width: 120, height: 40, left: 8, bottom: 8, top: 'auto', background: 'rgba(168,85,247,0.15)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: 8, fontSize: 11, gap: 4, pointerEvents: 'none' }}>
+                                <span>🔊</span>
+                                <span className="text-purple-300 truncate" style={{ maxWidth: 80 }}>
+                                    {sourceUrl ? 'Audio' : 'No source'}
+                                </span>
+                            </div>
+                        );
+                    }
+
+                    // Fallback: placeholder without source assigned
                     return (
-                        <div key={block.id} style={style}>
-                            {displayText}
+                        <div key={block.id} style={{ ...style, border: '1px dashed rgba(255,255,255,0.2)' }}>
+                            <div className="flex flex-col items-center gap-1 text-neutral-500 text-xs">
+                                <span className="text-lg">🖼</span>
+                                <span>No source URL</span>
+                            </div>
                         </div>
                     );
-                }
 
-                if (block.type === 'audio') {
-                    // Audio blocks are handled via the useEffect above (invisible playback).
-                    // Show a small visual indicator on the canvas.
-                    return (
-                        <div key={block.id} style={{ ...style, width: 120, height: 40, left: 8, bottom: 8, top: 'auto', background: 'rgba(168,85,247,0.15)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: 8, fontSize: 11, gap: 4, pointerEvents: 'none' }}>
-                            <span>🔊</span>
-                            <span className="text-purple-300 truncate" style={{ maxWidth: 80 }}>
-                                {sourceUrl ? 'Audio' : 'No source'}
-                            </span>
-                        </div>
-                    );
-                }
-
-                // Fallback: placeholder without source assigned
-                return (
-                    <div key={block.id} style={{ ...style, border: '1px dashed rgba(255,255,255,0.2)' }}>
-                        <div className="flex flex-col items-center gap-1 text-neutral-500 text-xs">
-                            <span className="text-lg">🖼</span>
-                            <span>No source URL</span>
-                        </div>
-                    </div>
-                );
-
-            })}
+                })}
+            </div>
         </div>
     );
 }
