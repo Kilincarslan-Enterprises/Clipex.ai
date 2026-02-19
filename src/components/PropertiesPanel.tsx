@@ -182,8 +182,8 @@ export function PropertiesPanel() {
                                 <button
                                     onClick={() => updateBlock(selectedBlock.id, { subtitleEnabled: false })}
                                     className={`flex-1 px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition-all ${!selectedBlock.subtitleEnabled
-                                            ? 'bg-amber-500/20 text-amber-400 border-r border-neutral-700'
-                                            : 'text-neutral-500 hover:text-neutral-300 border-r border-neutral-700'
+                                        ? 'bg-amber-500/20 text-amber-400 border-r border-neutral-700'
+                                        : 'text-neutral-500 hover:text-neutral-300 border-r border-neutral-700'
                                         }`}
                                 >
                                     Text
@@ -191,8 +191,8 @@ export function PropertiesPanel() {
                                 <button
                                     onClick={() => updateBlock(selectedBlock.id, { subtitleEnabled: true })}
                                     className={`flex-1 px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition-all ${selectedBlock.subtitleEnabled
-                                            ? 'bg-cyan-500/20 text-cyan-400'
-                                            : 'text-neutral-500 hover:text-neutral-300'
+                                        ? 'bg-cyan-500/20 text-cyan-400'
+                                        : 'text-neutral-500 hover:text-neutral-300'
                                         }`}
                                 >
                                     Subtitles
@@ -393,10 +393,19 @@ export function PropertiesPanel() {
                                         <Dyn field="width" />
                                     </div>
                                     <input
-                                        type="number"
-                                        value={selectedBlock.width || 0}
-                                        placeholder="Auto"
-                                        onChange={(e) => updateBlock(selectedBlock.id, { width: parseFloat(e.target.value) || 0 })}
+                                        type="text"
+                                        value={selectedBlock.width ?? '100%'}
+                                        placeholder="100%"
+                                        onChange={(e) => {
+                                            const v = e.target.value;
+                                            // Store as string if contains %, else as number
+                                            if (v.includes('%')) {
+                                                updateBlock(selectedBlock.id, { width: v });
+                                            } else {
+                                                const n = parseFloat(v);
+                                                updateBlock(selectedBlock.id, { width: isNaN(n) ? '100%' : n });
+                                            }
+                                        }}
                                         className={inputCls('width')}
                                     />
                                 </div>
@@ -406,10 +415,18 @@ export function PropertiesPanel() {
                                         <Dyn field="height" />
                                     </div>
                                     <input
-                                        type="number"
-                                        value={selectedBlock.height || 0}
-                                        placeholder="Auto"
-                                        onChange={(e) => updateBlock(selectedBlock.id, { height: parseFloat(e.target.value) || 0 })}
+                                        type="text"
+                                        value={selectedBlock.height ?? '100%'}
+                                        placeholder="100%"
+                                        onChange={(e) => {
+                                            const v = e.target.value;
+                                            if (v.includes('%')) {
+                                                updateBlock(selectedBlock.id, { height: v });
+                                            } else {
+                                                const n = parseFloat(v);
+                                                updateBlock(selectedBlock.id, { height: isNaN(n) ? '100%' : n });
+                                            }
+                                        }}
                                         className={inputCls('height')}
                                     />
                                 </div>

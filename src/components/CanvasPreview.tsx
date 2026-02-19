@@ -281,14 +281,25 @@ export function CanvasPreview() {
                 const sourceUrl = resolveSource(block.source);
                 const textContent = resolveText(block.text);
 
+                // Helper: resolve dimension (percentage or pixel)
+                const resolveDim = (val: number | string | undefined): string | number => {
+                    if (val === undefined || val === null || val === 0 || val === '') return '100%';
+                    if (typeof val === 'string') {
+                        if (val.endsWith('%')) return val; // Pass through percentage strings
+                        const n = parseFloat(val);
+                        return isNaN(n) ? '100%' : n;
+                    }
+                    return val; // raw pixel number
+                };
+
                 // Base styles
                 const animStyle = computeAnimationStyle(block, currentTime);
                 const style: React.CSSProperties = {
                     position: 'absolute',
                     left: block.x ?? 0,
                     top: block.y ?? 0,
-                    width: block.width || '100%',
-                    height: block.height || '100%',
+                    width: resolveDim(block.width),
+                    height: resolveDim(block.height),
                     zIndex: block.track,
                     backgroundColor: block.backgroundColor,
                     color: block.color ?? 'white',

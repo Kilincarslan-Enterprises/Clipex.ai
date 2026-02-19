@@ -288,8 +288,8 @@ interface Block {
     track: number;
     x?: number;
     y?: number;
-    width?: number;
-    height?: number;
+    width?: number | string;  // Percentage (e.g. "100%") or pixels
+    height?: number | string; // Percentage (e.g. "100%") or pixels
     fontSize?: number;
     color?: string;
     backgroundColor?: string;
@@ -640,10 +640,27 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
                 const src = resolvedSources.get(block.source!) ?? null;
                 if (!src || !inputMap.has(src)) continue;
                 const idx = inputMap.get(src)!;
-                const { start, duration: dur, x = 0, y = 0, width: w, height: h } = block;
+                const { start, duration: dur, x = 0, y = 0 } = block;
                 const end = start + dur;
-                const scale = w && w > 0 || h && h > 0
-                    ? `,scale=${w && w > 0 ? w : -1}:${h && h > 0 ? h : -1}`
+
+                // Resolve width/height: percentage → pixels, 0/undefined → canvas size
+                const resolveDimPx = (val: number | string | undefined, canvasDim: number): number => {
+                    if (val === undefined || val === null || val === 0 || val === '') return canvasDim;
+                    if (typeof val === 'string') {
+                        if (val.endsWith('%')) {
+                            return Math.round((parseFloat(val) / 100) * canvasDim);
+                        }
+                        const n = parseFloat(val);
+                        return isNaN(n) || n <= 0 ? canvasDim : n;
+                    }
+                    return val > 0 ? val : canvasDim;
+                };
+                const w = resolveDimPx(block.width, canvas.width);
+                const h = resolveDimPx(block.height, canvas.height);
+
+                // Only add scale filter if dimensions differ from canvas
+                const scale = (w !== canvas.width || h !== canvas.height)
+                    ? `,scale=${w}:${h}`
                     : '';
                 const pts = `setpts=PTS-STARTPTS+(${start}/TB)`;
 
