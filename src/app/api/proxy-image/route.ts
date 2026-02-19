@@ -31,8 +31,8 @@ export async function GET(request: NextRequest) {
 
         const contentType = response.headers.get('content-type') || '';
 
-        // SECURITY: Only allow images and videos
-        if (!contentType.startsWith('image/') && !contentType.startsWith('video/')) {
+        // SECURITY: Only allow images, videos, and audio
+        if (!contentType.startsWith('image/') && !contentType.startsWith('video/') && !contentType.startsWith('audio/')) {
             return new NextResponse('Forbidden content type', { status: 403 });
         }
 

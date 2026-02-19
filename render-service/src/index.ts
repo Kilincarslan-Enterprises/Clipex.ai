@@ -790,9 +790,9 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
             const start = block.start || 0;
             const dur = block.duration || 0;
 
-            // Trim audio to block duration, delay it to block.start, then set volume
-            // asetpts shifts audio forward in time; adelay is simpler and more reliable
-            let audioFilter = `[${idx}:a]atrim=0:${dur},asetpts=PTS-STARTPTS`;
+            // Audio files have their audio as stream 0 (no video stream)
+            // Use [idx:0] which is the first (and usually only) stream in an audio file
+            let audioFilter = `[${idx}:0]atrim=0:${dur},asetpts=PTS-STARTPTS`;
 
             // Apply volume
             if (vol !== 1) {
@@ -811,32 +811,9 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
             labelCounter++;
         }
 
-        // Also capture audio from video blocks that have audio tracks
-        const videoBlocksWithAudio = activeBlocks.filter(b => b.type === 'video' && b.source);
-        for (const block of videoBlocksWithAudio) {
-            const src = resolvedSources.get(block.source!) ?? null;
-            if (!src || !inputMap.has(src)) continue;
-            const idx = inputMap.get(src)!;
-
-            const aLabel = `vidaud${labelCounter}`;
-            const start = block.start || 0;
-            const dur = block.duration || 0;
-            const vol = typeof block.volume === 'number' ? block.volume / 100 : 1;
-
-            // Try to use audio from video input; wrap in a try since some videos may have no audio
-            let vAudioFilter = `[${idx}:a]atrim=0:${dur},asetpts=PTS-STARTPTS`;
-            if (vol !== 1) {
-                vAudioFilter += `,volume=${vol}`;
-            }
-            if (start > 0) {
-                const delayMs = Math.round(start * 1000);
-                vAudioFilter += `,adelay=${delayMs}|${delayMs}`;
-            }
-            vAudioFilter += `[${aLabel}]`;
-            filters.push(vAudioFilter);
-            audioStreamLabels.push(`[${aLabel}]`);
-            labelCounter++;
-        }
+        // NOTE: We intentionally do NOT try to extract audio from video blocks here.
+        // Many videos have no audio track, and referencing [idx:a] on those crashes FFmpeg.
+        // If video audio is needed, the user should add a separate audio block pointing to the same source.
 
         // Mix all audio streams together
         let audioStream: string | null = null;

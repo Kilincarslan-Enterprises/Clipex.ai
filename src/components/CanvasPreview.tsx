@@ -222,21 +222,30 @@ export function CanvasPreview() {
             }
         }
 
+        // Helper: proxy external URLs for audio to bypass CORS
+        const proxyAudioUrl = (url: string): string => {
+            if ((url.startsWith('http://') || url.startsWith('https://')) && !url.includes('/api/proxy-image')) {
+                return `/api/proxy-image?url=${encodeURIComponent(url)}`;
+            }
+            return url;
+        };
+
         // Sync active audio blocks
         for (const block of visibleAudioBlocks) {
             const sourceUrl = resolveSource(block.source);
             if (!sourceUrl) continue;
 
+            const proxiedUrl = proxyAudioUrl(sourceUrl);
+
             let el = audioRefs.current.get(block.id);
             if (!el) {
                 el = new Audio();
-                el.crossOrigin = 'anonymous';
                 audioRefs.current.set(block.id, el);
             }
 
             // Update source if changed
-            if (el.src !== sourceUrl && !el.src.endsWith(sourceUrl)) {
-                el.src = sourceUrl;
+            if (el.src !== proxiedUrl && !el.src.endsWith(proxiedUrl)) {
+                el.src = proxiedUrl;
             }
 
             // Volume (0-100 → 0-1)
