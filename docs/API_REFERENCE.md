@@ -69,7 +69,7 @@ Keys follow the format `<dynamicId>.<property>` for blocks, or `template.<proper
 **Template-level** (`template.`):
 | Property | Type | Description |
 |---|---|---|
-| `duration` | number | Total template duration in seconds |
+| `duration` | number | Total template duration in seconds. Blocks with missing `duration` will automatically inherit this value ("Auto" mode). |
 
 **Block-level** (`<dynamicId>.`):
 | Block Type | Available Properties |

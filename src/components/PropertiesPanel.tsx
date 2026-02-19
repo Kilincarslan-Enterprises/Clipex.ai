@@ -147,10 +147,23 @@ export function PropertiesPanel() {
                         </div>
                         <input
                             type="number" step="0.1"
-                            value={selectedBlock.duration}
-                            onChange={(e) => updateBlock(selectedBlock.id, { duration: parseFloat(e.target.value) || 0.1 })}
+                            value={selectedBlock.duration ?? ''}
+                            onChange={(e) => {
+                                const raw = e.target.value;
+                                if (raw === '' || raw === undefined) {
+                                    updateBlock(selectedBlock.id, { duration: undefined });
+                                } else {
+                                    const val = parseFloat(raw);
+                                    updateBlock(selectedBlock.id, { duration: isNaN(val) || val <= 0 ? undefined : val });
+                                }
+                            }}
+                            placeholder="Auto"
                             className={inputCls('duration')}
+                            title="Leave empty for Auto (inherits template duration)"
                         />
+                        {selectedBlock.duration === undefined && (
+                            <span className="text-[10px] text-blue-400/60">Auto – uses template duration</span>
+                        )}
                     </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">

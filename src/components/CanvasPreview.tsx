@@ -203,8 +203,20 @@ export function CanvasPreview() {
         });
     }, []);
 
+    // Helper to resolve the effective duration for a block
+    const getEffectiveDuration = (block: { duration?: number }) => {
+        if (block.duration !== undefined && block.duration > 0) return block.duration;
+        if (template.canvas.duration && template.canvas.duration > 0) return template.canvas.duration;
+        // fallback: calculate from all blocks that DO have a duration
+        const maxEnd = Math.max(0, ...template.timeline.filter(b => b.duration && b.duration > 0).map(b => (b.start || 0) + b.duration!));
+        return maxEnd > 0 ? maxEnd : 10; // default 10s if nothing is set
+    };
+
     const visibleBlocks = template.timeline.filter(
-        (block) => currentTime >= block.start && currentTime < block.start + block.duration
+        (block) => {
+            const dur = getEffectiveDuration(block);
+            return currentTime >= block.start && currentTime < block.start + dur;
+        }
     );
 
     // Sort by track (z-index)
@@ -312,7 +324,9 @@ export function CanvasPreview() {
                 (canvasRef as any).current = el;
             }}
             className="relative w-full h-full flex items-center justify-center overflow-hidden"
-            style={{ background: '#000' }}
+            style={{
+                background: 'repeating-conic-gradient(#1a1a1a 0% 25%, #111 0% 50%) 50% / 20px 20px',
+            }}
         >
             <div
                 style={{

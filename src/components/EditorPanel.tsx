@@ -7,7 +7,7 @@ import { JsonEditor } from './JsonEditor';
 import { useStore } from '@/lib/store';
 import { Block } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
-import { Code, Layers, Video, Loader2, ArrowLeft, Wifi, WifiOff, Zap, X, Copy, Check } from 'lucide-react';
+import { Code, Layers, Video, Loader2, ArrowLeft, Wifi, WifiOff, Zap, X, Copy, Check, Monitor, Clock } from 'lucide-react';
 import { useRouter, useParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/utils/supabase/client';
@@ -31,11 +31,26 @@ export function EditorPanel() {
     const supabase = createClient();
     const [userId, setUserId] = useState<string | null>(null);
 
-    const { addBlock, currentTime, template, placeholders, projectId } = useStore();
+    const { addBlock, currentTime, template, placeholders, projectId, updateCanvas } = useStore();
 
     const [renderProgress, setRenderProgress] = useState(0);
     const [showApiModal, setShowApiModal] = useState(false);
     const [copiedApi, setCopiedApi] = useState(false);
+    const [showFormatMenu, setShowFormatMenu] = useState(false);
+
+    // Aspect ratio presets
+    const FORMAT_PRESETS = [
+        { label: '9:16', w: 1080, h: 1920, desc: 'Vertical (TikTok, Reels)' },
+        { label: '16:9', w: 1920, h: 1080, desc: 'Landscape (YouTube)' },
+        { label: '1:1', w: 1080, h: 1080, desc: 'Square (Instagram)' },
+        { label: '4:5', w: 1080, h: 1350, desc: 'Portrait (Instagram)' },
+    ];
+
+    const currentAspect = () => {
+        const { width, height } = template.canvas;
+        const preset = FORMAT_PRESETS.find(p => p.w === width && p.h === height);
+        return preset?.label || `${width}×${height}`;
+    };
 
     // Direct URL to the render service (bypasses broken Cloudflare Pages API routes)
     const RENDER_URL = process.env.NEXT_PUBLIC_RENDER_API_URL || 'http://localhost:3001';
@@ -290,6 +305,62 @@ export function EditorPanel() {
 
                 <div className="flex items-center gap-2">
                     <HealthDot />
+
+                    {/* ── Format / Aspect Ratio Dropdown ── */}
+                    <div className="relative">
+                        <button
+                            onClick={() => setShowFormatMenu(!showFormatMenu)}
+                            className="px-2.5 py-1.5 rounded text-sm font-medium flex items-center gap-1.5 transition-colors bg-neutral-800 text-neutral-300 hover:text-white hover:bg-neutral-700 border border-neutral-700"
+                            title="Video Format / Aspect Ratio"
+                        >
+                            <Monitor size={14} />
+                            <span className="hidden sm:inline">{currentAspect()}</span>
+                        </button>
+                        {showFormatMenu && (
+                            <div className="absolute right-0 top-full mt-1 z-50 bg-neutral-900 border border-neutral-700 rounded-lg shadow-2xl overflow-hidden w-56">
+                                {FORMAT_PRESETS.map((p) => {
+                                    const isActive = template.canvas.width === p.w && template.canvas.height === p.h;
+                                    return (
+                                        <button
+                                            key={p.label}
+                                            onClick={() => { updateCanvas({ width: p.w, height: p.h }); setShowFormatMenu(false); }}
+                                            className={`w-full text-left px-4 py-2.5 flex items-center justify-between text-sm hover:bg-neutral-800 transition-colors ${isActive ? 'text-blue-400 bg-blue-500/10' : 'text-neutral-300'
+                                                }`}
+                                        >
+                                            <div>
+                                                <span className="font-mono font-bold">{p.label}</span>
+                                                <span className="ml-2 text-neutral-500 text-xs">{p.desc}</span>
+                                            </div>
+                                            {isActive && <span className="text-blue-400 text-xs">✓</span>}
+                                        </button>
+                                    );
+                                })}
+                                <div className="border-t border-neutral-800 px-4 py-2 text-[10px] text-neutral-600">
+                                    {template.canvas.width} × {template.canvas.height}px
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* ── Global Duration Input ── */}
+                    <div className="flex items-center gap-1 bg-neutral-800 border border-neutral-700 rounded px-2 py-1">
+                        <Clock size={12} className="text-neutral-500" />
+                        <input
+                            type="number"
+                            step="0.5"
+                            min="0.5"
+                            value={template.canvas.duration ?? ''}
+                            onChange={(e) => {
+                                const val = parseFloat(e.target.value);
+                                updateCanvas({ duration: isNaN(val) || val <= 0 ? undefined : val });
+                            }}
+                            placeholder="Auto"
+                            className="w-14 bg-transparent text-sm text-neutral-200 outline-none placeholder:text-neutral-600 text-center font-mono"
+                            title="Global template duration (seconds). Leave empty for auto-calculate."
+                        />
+                        <span className="text-[10px] text-neutral-600">s</span>
+                    </div>
+
                     {/* API Preview Button */}
                     {(template.timeline.some(b => b.dynamicId && b.dynamicFields && b.dynamicFields.length > 0) || (template.dynamic?.dynamicFields?.length ?? 0) > 0) && (
                         <button
@@ -386,8 +457,17 @@ export function EditorPanel() {
                             onDrop={handleDrop}
                             onDragOver={handleDragOver}
                         >
-                            <div className="bg-black shadow-2xl relative h-full max-h-[90%] w-auto aspect-[9/16] ring-1 ring-neutral-800">
+                            <div
+                                className="bg-black shadow-2xl relative h-full max-h-[90%] w-auto ring-1 ring-neutral-700 rounded-sm"
+                                style={{ aspectRatio: `${template.canvas.width} / ${template.canvas.height}` }}
+                            >
+                                {/* Canvas border glow to distinguish content area */}
+                                <div className="absolute -inset-[1px] rounded-sm ring-1 ring-blue-500/20 pointer-events-none" />
                                 <CanvasPreview />
+                                {/* Format badge */}
+                                <div className="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-black/60 text-[10px] font-mono text-neutral-500 pointer-events-none backdrop-blur-sm border border-neutral-800">
+                                    {template.canvas.width}×{template.canvas.height}
+                                </div>
                             </div>
                         </div>
 

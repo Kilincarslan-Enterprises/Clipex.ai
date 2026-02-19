@@ -34,10 +34,18 @@ Definiert die grundlegenden Eigenschaften des Ausgabevideos.
 
 | Parameter | Typ | Beschreibung | Beispiel |
 |---|---|---|---|
-| `width` | number | Breite des Videos in Pixeln. | `1080` |
-| `height` | number | Höhe des Videos in Pixeln. | `1920` |
+| `width` | number | Breite des Videos in Pixeln. Gängige Presets: 1080 (9:16, 1:1, 4:5) oder 1920 (16:9). | `1080` |
+| `height` | number | Höhe des Videos in Pixeln. Gängige Presets: 1920 (9:16), 1080 (16:9), 1080 (1:1), 1350 (4:5). | `1920` |
 | `fps` | number | Bilder pro Sekunde (Frames per Second). | `30` |
-| `duration` | number | (Optional) Gesamtdauer des Templates in Sekunden. Wenn nicht gesetzt, ergibt sich die Dauer aus dem längsten Element. | `15` |
+| `duration` | number | (Optional) Gesamtdauer des Templates in Sekunden. Wenn nicht gesetzt, ergibt sich die Dauer aus dem längsten Element. Blöcke mit fehlender `duration` erben diesen Wert automatisch. | `15` |
+
+**Format-Presets im Editor:**
+| Preset | Breite | Höhe | Verwendung |
+|---|---|---|---|
+| 9:16 | 1080 | 1920 | TikTok, Instagram Reels, YouTube Shorts |
+| 16:9 | 1920 | 1080 | YouTube, Webseiten |
+| 1:1 | 1080 | 1080 | Instagram Posts |
+| 4:5 | 1080 | 1350 | Instagram Portrait Posts |
 
 ---
 
@@ -55,7 +63,7 @@ Diese Parameter sind für **alle** Block-Typen (`video`, `image`, `text`, `audio
 | `type` | string | **Ja** | Typ des Elements: `'video'`, `'image'`, `'text'`, `'audio'`. |
 | `track` | number | **Ja** | Die visuelle Ebene (Z-Index). Höhere Zahlen liegen weiter oben/vorne. |
 | `start` | number | **Ja** | Startzeitpunkt in Sekunden auf der Timeline. |
-| `duration`| number | **Ja** | Anzeigedauer in Sekunden. |
+| `duration`| number | Nein | Anzeigedauer in Sekunden. **Wenn leer/nicht gesetzt = "Auto"** – der Block erbt die `canvas.duration`. |
 | `dynamicId` | string | Nein | Ein benutzerdefinierter ID-Name für API-Ersetzungen (z.B. `"product_image"`). |
 | `dynamicFields` | string[] | Nein | Liste der Felder, die über die API änderbar sein sollen (z.B. `["source", "text"]`). |
 

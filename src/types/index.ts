@@ -49,7 +49,7 @@ export interface Block {
   type: BlockType;
   track: number; // Vertical stacking order
   start: number; // seconds
-  duration: number; // seconds
+  duration?: number; // seconds – undefined = "Auto" (uses template.canvas.duration)
   // Position & Dimensions
   x?: number;
   y?: number;

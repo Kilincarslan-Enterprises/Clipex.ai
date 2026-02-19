@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Template, Block, Asset } from '@/types';
+import { Template, Block, Asset, CanvasSettings } from '@/types';
 import { createClient } from '@/utils/supabase/client';
 
 const supabase = createClient();
@@ -15,6 +15,7 @@ interface StoreState {
 
     // Actions
     setTemplate: (template: Template) => void;
+    updateCanvas: (updates: Partial<CanvasSettings>) => void;
     updateBlock: (id: string, updates: Partial<Block>) => void;
     addBlock: (block: Block) => void;
     removeBlock: (id: string) => void;
@@ -53,6 +54,14 @@ export const useStore = create<StoreState>((set) => ({
     projectName: 'Untitled Project',
 
     setTemplate: (template) => set({ template }),
+
+    updateCanvas: (updates) =>
+        set((state) => ({
+            template: {
+                ...state.template,
+                canvas: { ...state.template.canvas, ...updates },
+            },
+        })),
 
     updateBlock: (id, updates) =>
         set((state) => ({

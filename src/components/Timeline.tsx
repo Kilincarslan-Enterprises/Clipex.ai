@@ -31,6 +31,13 @@ export function Timeline() {
 
     const timelineRef = useRef<HTMLDivElement>(null);
 
+    // Resolve effective duration for a block (handles Auto / undefined)
+    const getEffectiveDuration = (block: Block) => {
+        if (block.duration !== undefined && block.duration > 0) return block.duration;
+        if (template.canvas.duration && template.canvas.duration > 0) return template.canvas.duration;
+        return 5; // sensible default for timeline display
+    };
+
     const handleTimelineClick = (e: MouseEvent) => {
         if (!timelineRef.current) return;
         const rect = timelineRef.current.getBoundingClientRect();
@@ -91,7 +98,7 @@ export function Timeline() {
     // Determine total width based on max duration or fixed minimum
     const maxDuration = Math.max(
         30, // Minimum 30s
-        ...template.timeline.map(b => b.start + b.duration)
+        ...template.timeline.map(b => b.start + getEffectiveDuration(b))
     );
     const totalWidth = maxDuration * PIXELS_PER_SECOND + 200;
 
@@ -163,7 +170,7 @@ export function Timeline() {
                                     )}
                                     style={{
                                         left: block.start * PIXELS_PER_SECOND,
-                                        width: Math.max(block.duration * PIXELS_PER_SECOND, 30),
+                                        width: Math.max(getEffectiveDuration(block) * PIXELS_PER_SECOND, 30),
                                         top: 30 + (block.track * 45)
                                     }}
                                 >

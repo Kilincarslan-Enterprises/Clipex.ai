@@ -284,7 +284,7 @@ interface Block {
     source?: string;
     text?: string;
     start: number;
-    duration: number;
+    duration?: number; // undefined = auto (uses canvas.duration)
     track: number;
     x?: number;
     y?: number;
@@ -503,11 +503,15 @@ const processRender = async (jobId: string, reqBody: RenderRequest) => {
         const { canvas, timeline } = template;
 
         // Sanitize blocks: ensure start/duration are valid numbers
+        // If duration is missing (Auto), use canvas.duration as fallback
+        const canvasDuration = canvas.duration || 0;
         const activeBlocks = timeline
             .map((b) => ({
                 ...b,
                 start: typeof b.start === 'number' && !isNaN(b.start) ? b.start : 0,
-                duration: typeof b.duration === 'number' && !isNaN(b.duration) ? b.duration : 0,
+                duration: (typeof b.duration === 'number' && !isNaN(b.duration) && b.duration > 0)
+                    ? b.duration
+                    : (canvasDuration > 0 ? canvasDuration : 0),
             }))
             .filter((b) => b.duration > 0)
             .sort((a, b) => a.track - b.track);
