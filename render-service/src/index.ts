@@ -166,9 +166,38 @@ const parseVTTTimestamp = (ts: string): number => {
     return hours * 3600 + minutes * 60 + seconds;
 };
 
+/**
+ * Normalize VTT input that may come as a JSON-encoded string (e.g. from API).
+ * When VTT passes through JSON.stringify / JSON.parse, newlines become literal
+ * two-character sequences `\n` instead of real newline characters.
+ */
+const normalizeVttInput = (raw: string): string => {
+    // 1. If it looks like a JSON string (starts with "), try to parse it
+    const trimmed = raw.trim();
+    if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+        try {
+            const parsed = JSON.parse(trimmed);
+            if (typeof parsed === 'string') return parsed;
+        } catch { /* not valid JSON, continue */ }
+    }
+
+    // 2. If there are no real newlines but there are literal \n sequences,
+    //    the content was likely JSON-escaped without wrapping quotes.
+    if (!raw.includes('\n') && raw.includes('\\n')) {
+        return raw
+            .replace(/\\r\\n/g, '\n')
+            .replace(/\\n/g, '\n')
+            .replace(/\\r/g, '\n');
+    }
+
+    return raw;
+};
+
 const parseVTT = (vttContent: string): SubtitleCue[] => {
     const cues: SubtitleCue[] = [];
-    const lines = vttContent.replace(/\r\n/g, '\n').split('\n');
+    // Handle JSON-encoded input (literal \n instead of real newlines)
+    const normalized = normalizeVttInput(vttContent);
+    const lines = normalized.replace(/\r\n/g, '\n').split('\n');
     let i = 0;
 
     // Skip WEBVTT header
