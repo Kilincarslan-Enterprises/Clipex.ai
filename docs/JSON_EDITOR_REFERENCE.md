@@ -66,6 +66,8 @@ Diese Parameter sind für **alle** Block-Typen (`video`, `image`, `text`, `audio
 | `duration`| number | Nein | Anzeigedauer in Sekunden. **Wenn leer/nicht gesetzt = "Auto"** – der Block erbt die `canvas.duration`. |
 | `dynamicId` | string | Nein | Ein benutzerdefinierter ID-Name für API-Ersetzungen (z.B. `"product_image"`). |
 | `dynamicFields` | string[] | Nein | Liste der Felder, die über die API änderbar sein sollen (z.B. `["source", "text"]`). |
+| `isDynamicArray` | boolean | Nein | Wenn `true`, wirkt dieser Block als Template für ein dynamisches Array. Über die API kann dann ein Array von Werten gesendet werden, um N sequenzielle Kopien zu generieren. |
+| `dynamicArrayConfig` | object | Nein | Konfiguration für das dynamische Array (nur relevant wenn `isDynamicArray: true`). Enthält `durationMode`. |
 
 ### Visuelle Parameter (Video, Image, Text)
 
@@ -191,6 +193,58 @@ Jeder sichtbare Block (`video`, `image`, `text`) kann ein Array von Animationen 
   ]
 }
 ```
+
+---
+
+## 3.5 Dynamic Arrays (`isDynamicArray`)
+
+Ein Block kann als "Dynamic Array Template" markiert werden. In diesem Modus wird bei einem API-Aufruf aus einem einzelnen Block automatisch N Blöcke generiert, die hintereinander in der Timeline platziert werden.
+
+### `dynamicArrayConfig`
+
+| Parameter | Typ | Beschreibung |
+|---|---|---|
+| `durationMode` | `'fixed_per_item'` \| `'divide_total'` | **Fixed**: Jeder Klon behält die Block-Dauer (Gesamtdauer = N × duration). **Divide**: Die Block-Dauer wird aufgeteilt (Jeder Klon = duration / N). |
+
+### Beispiel: Bild-Block als Dynamic Array
+
+**Im Template:**
+```json
+{
+  "id": "slideshow-img",
+  "type": "image",
+  "track": 1,
+  "start": 0,
+  "duration": 3,
+  "width": "100%",
+  "height": "100%",
+  "source": "https://example.com/placeholder.jpg",
+  "dynamicId": "slideshow_1",
+  "dynamicFields": ["source"],
+  "isDynamicArray": true,
+  "dynamicArrayConfig": {
+    "durationMode": "fixed_per_item"
+  },
+  "animations": [
+    { "id": "a1", "type": "fade_in", "time": 0, "duration": 0.5 }
+  ]
+}
+```
+
+**Im API Request:**
+```json
+{
+  "modifications": {
+    "slideshow_1.source": [
+      "https://cdn.example.com/img1.jpg",
+      "https://cdn.example.com/img2.jpg",
+      "https://cdn.example.com/img3.jpg"
+    ]
+  }
+}
+```
+
+**Ergebnis:** 3 Bild-Blöcke werden generiert (start=0, 3, 6), jeweils 3s lang, jeder mit der gleichen fade_in Animation.
 
 ---
 

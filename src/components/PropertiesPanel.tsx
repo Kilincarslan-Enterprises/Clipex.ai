@@ -456,6 +456,77 @@ export function PropertiesPanel() {
                         isFieldDynamic={isFieldDynamic}
                     />
                 )}
+
+                {/* ═══════ DYNAMIC ARRAY ═══════ */}
+                <hr className="border-neutral-800" />
+                <div className="space-y-3">
+                    <h3 className="text-xs font-bold text-violet-400 uppercase">Dynamic Array</h3>
+                    <div className="flex items-center gap-2">
+                        <input
+                            type="checkbox"
+                            id="dynamic-array-check"
+                            checked={selectedBlock.isDynamicArray || false}
+                            onChange={(e) => {
+                                const enabled = e.target.checked;
+                                const updates: Record<string, any> = {
+                                    isDynamicArray: enabled,
+                                };
+                                if (enabled) {
+                                    // Auto-set default config
+                                    updates.dynamicArrayConfig = selectedBlock.dynamicArrayConfig || { durationMode: 'fixed_per_item' };
+                                    // Auto-enable "source" as a dynamic field if not already
+                                    if (selectedBlock.type !== 'text') {
+                                        const current = selectedBlock.dynamicFields || [];
+                                        if (!current.includes('source')) {
+                                            updates.dynamicFields = [...current, 'source'];
+                                        }
+                                        // Auto-generate dynamicId if missing
+                                        if (!selectedBlock.dynamicId) {
+                                            const count = template.timeline.filter(b => b.type === selectedBlock.type && b.dynamicId).length + 1;
+                                            updates.dynamicId = `${selectedBlock.type}_${count}`;
+                                        }
+                                    }
+                                } else {
+                                    updates.dynamicArrayConfig = undefined;
+                                }
+                                updateBlock(selectedBlock.id, updates);
+                            }}
+                            className="rounded bg-neutral-800 border-neutral-700 text-violet-600 focus:ring-violet-500"
+                        />
+                        <label htmlFor="dynamic-array-check" className="text-sm text-neutral-300 font-medium">
+                            Enable Dynamic Array
+                        </label>
+                    </div>
+                    <span className="text-[10px] text-neutral-600 block -mt-1">
+                        When enabled, this block acts as a template. Pass an array of values via API to generate multiple sequential blocks.
+                    </span>
+
+                    {selectedBlock.isDynamicArray && (
+                        <div className="bg-violet-500/5 border border-violet-500/20 rounded-lg p-3 space-y-3">
+                            <div className="flex flex-col gap-1">
+                                <label className="text-xs text-violet-400 uppercase font-bold">Duration Mode</label>
+                                <select
+                                    value={selectedBlock.dynamicArrayConfig?.durationMode || 'fixed_per_item'}
+                                    onChange={(e) => updateBlock(selectedBlock.id, {
+                                        dynamicArrayConfig: {
+                                            ...selectedBlock.dynamicArrayConfig,
+                                            durationMode: e.target.value as 'fixed_per_item' | 'divide_total',
+                                        }
+                                    })}
+                                    className="bg-neutral-800 border border-violet-500/20 rounded px-2 py-1.5 text-sm text-neutral-200 outline-none focus:border-violet-500/50"
+                                >
+                                    <option value="fixed_per_item">Fixed Time per Item</option>
+                                    <option value="divide_total">Fit to Total Time</option>
+                                </select>
+                                <span className="text-[10px] text-neutral-600">
+                                    {selectedBlock.dynamicArrayConfig?.durationMode === 'divide_total'
+                                        ? `Total block duration (${selectedBlock.duration ?? 'Auto'}s) will be split across all items equally.`
+                                        : `Each item keeps ${selectedBlock.duration ?? 'Auto'}s. Total extends with number of items.`}
+                                </span>
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );

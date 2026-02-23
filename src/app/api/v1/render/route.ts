@@ -105,6 +105,9 @@ export async function POST(req: Request) {
         const templateDynamic = templateData.dynamic || {};
 
         if (modifications && typeof modifications === 'object') {
+            // ── Collect dynamic array expansions (processed after normal mods) ──
+            const arrayExpansions: { blockIndex: number; prop: string; values: any[] }[] = [];
+
             for (const [key, value] of Object.entries(modifications)) {
                 const dotIndex = key.indexOf('.');
                 if (dotIndex === -1) {
@@ -163,6 +166,12 @@ export async function POST(req: Request) {
                     }
                 }
 
+                // ── Dynamic Array: value is an array → queue expansion ──
+                if (Array.isArray(value) && block.isDynamicArray) {
+                    arrayExpansions.push({ blockIndex, prop, values: value });
+                    continue;
+                }
+
                 // Apply modification — coerce numeric properties
                 const numericBlockFields = ['duration', 'start', 'track', 'x', 'y', 'fontSize', 'volume'];
                 let finalValue = value;
@@ -177,6 +186,70 @@ export async function POST(req: Request) {
                     finalValue = numVal;
                 }
                 timeline[blockIndex] = { ...timeline[blockIndex], [prop]: finalValue };
+            }
+
+            // ── Process dynamic array expansions ──
+            // Sort by descending blockIndex so splicing doesn't shift earlier indices
+            arrayExpansions.sort((a, b) => b.blockIndex - a.blockIndex);
+
+            for (const expansion of arrayExpansions) {
+                const templateBlock = timeline[expansion.blockIndex];
+                const count = expansion.values.length;
+                if (count === 0) continue;
+
+                const config = templateBlock.dynamicArrayConfig || { durationMode: 'fixed_per_item' };
+                const originalDuration = templateBlock.duration || canvas.duration || 5;
+                const originalStart = templateBlock.start || 0;
+
+                // Calculate per-item duration based on mode
+                let itemDuration: number;
+                if (config.durationMode === 'divide_total') {
+                    // The original block duration is the total for all items
+                    itemDuration = originalDuration / count;
+                } else {
+                    // 'fixed_per_item' (default): each item gets the full original duration
+                    itemDuration = originalDuration;
+                }
+
+                // Total duration of the expanded array
+                const totalArrayDuration = itemDuration * count;
+
+                // How much extra time the expansion adds compared to the original single block
+                const extraTime = totalArrayDuration - originalDuration;
+
+                // Build cloned blocks
+                const clonedBlocks: any[] = [];
+                for (let i = 0; i < count; i++) {
+                    const clone = {
+                        ...JSON.parse(JSON.stringify(templateBlock)),
+                        id: `${templateBlock.id}_arr_${i}`,
+                        start: originalStart + (i * itemDuration),
+                        duration: itemDuration,
+                        [expansion.prop]: expansion.values[i],
+                        // Remove array config from clones (not needed at render time)
+                        isDynamicArray: undefined,
+                        dynamicArrayConfig: undefined,
+                    };
+                    // Adjust animation times: they are relative to block start, so they stay the same
+                    clonedBlocks.push(clone);
+                }
+
+                // Replace the original block with the cloned blocks
+                timeline.splice(expansion.blockIndex, 1, ...clonedBlocks);
+
+                // Shift subsequent blocks on the same track forward by extraTime
+                if (extraTime > 0) {
+                    const track = templateBlock.track;
+                    // The cloned blocks now occupy indices [expansion.blockIndex .. expansion.blockIndex + count - 1]
+                    // Blocks after them in the array that are on the same track and start after the original block should be shifted
+                    const afterIndex = expansion.blockIndex + count;
+                    for (let i = afterIndex; i < timeline.length; i++) {
+                        const b = timeline[i];
+                        if (b.track === track && (b.start || 0) >= originalStart + originalDuration) {
+                            timeline[i] = { ...b, start: (b.start || 0) + extraTime };
+                        }
+                    }
+                }
             }
         }
 

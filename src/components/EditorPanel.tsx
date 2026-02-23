@@ -242,7 +242,7 @@ export function EditorPanel() {
 
     // Generate API request JSON
     const generateApiJson = () => {
-        const modifications: Record<string, string | number> = {};
+        const modifications: Record<string, any> = {};
 
         // Numeric fields that should be shown as numbers, not strings
         const numericFields = new Set(['duration', 'start', 'track', 'x', 'y', 'fontSize', 'volume']);
@@ -259,7 +259,17 @@ export function EditorPanel() {
         );
         for (const block of dynamicBlocks) {
             for (const field of (block.dynamicFields || [])) {
-                modifications[`${block.dynamicId}.${field}`] = numericFields.has(field) ? 0 : `<${field}_value>`;
+                const isNumeric = numericFields.has(field);
+                if (block.isDynamicArray && field === 'source') {
+                    // Typical usage is arrays for 'source' in dynamic arrays
+                    modifications[`${block.dynamicId}.${field}`] = isNumeric ? [0, 1, 2] : [`<${field}_1>`, `<${field}_2>`, `<${field}_3>`];
+                } else if (block.isDynamicArray && field !== 'source') {
+                    // It can still be a normal value or array, but let's show an array example 
+                    // to remind the user they can pass arrays for dynamic blocks
+                    modifications[`${block.dynamicId}.${field}`] = isNumeric ? [0, 1, 2] : [`<${field}_1>`, `<${field}_2>`, `<${field}_3>`];
+                } else {
+                    modifications[`${block.dynamicId}.${field}`] = isNumeric ? 0 : `<${field}_value>`;
+                }
             }
         }
         return JSON.stringify({
