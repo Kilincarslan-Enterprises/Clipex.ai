@@ -40,7 +40,12 @@ Start a render job using a saved template with optional dynamic modifications.
     "image_1.duration": 5,
     "image_1.x": 100,
     "text_1.text": "Hello World",
-    "text_1.subtitleSource": "https://example.com/subtitles.vtt"
+    "text_1.subtitleSource": "https://example.com/subtitles.vtt",
+    "slideshow_1.source": [
+      "https://example.com/img1.jpg",
+      "https://example.com/img2.jpg",
+      "https://example.com/img3.jpg"
+    ]
   },
   "elements": [
     {
@@ -79,6 +84,8 @@ Keys follow the format `<dynamicId>.<property>` for blocks, or `template.<proper
 | `text` | `text`, `fontSize`, `color`, `subtitleSource` |
 | `audio` | `source`, `volume` |
 
+> **Dynamic Array values:** If a block has `isDynamicArray: true` in the template, you can pass an **array** as the modification value instead of a single value (e.g. `"image_1.source": ["url1", "url2", "url3"]`). The single block will be expanded into N sequential blocks automatically. See [Dynamic Arrays](#dynamic-arrays) below.
+
 **Response** (Success):
 ```json
 {
@@ -94,6 +101,38 @@ Keys follow the format `<dynamicId>.<property>` for blocks, or `template.<proper
   "error": "Description of what went wrong"
 }
 ```
+
+### Dynamic Arrays
+
+Dynamic Arrays allow a single template block to generate multiple sequential blocks at render time. This is useful when the number of items (e.g. product images in a slideshow) is not known in advance.
+
+**How it works:**
+1. In the Editor, enable **Dynamic Array** on a block (e.g. an image block with `dynamicId: "slideshow_1"`).
+2. Choose a **Duration Mode**:
+   - `fixed_per_item` — Each generated block keeps the original duration. Total time extends with item count.
+   - `divide_total` — The original block duration is split evenly across all items.
+3. When calling the render API, pass an **array** as the modification value:
+
+```json
+{
+  "template_id": "...",
+  "modifications": {
+    "slideshow_1.source": [
+      "https://cdn.example.com/img1.jpg",
+      "https://cdn.example.com/img2.jpg",
+      "https://cdn.example.com/img3.jpg",
+      "https://cdn.example.com/img4.jpg",
+      "https://cdn.example.com/img5.jpg"
+    ]
+  }
+}
+```
+
+**Result:** If the template block had `duration: 3s` and `durationMode: "fixed_per_item"`, this generates 5 image blocks of 3s each (total 15s), placed sequentially at `start=0, 3, 6, 9, 12`. All blocks inherit the same position, size, animations, and other presets from the original template block.
+
+If `durationMode: "divide_total"`, the 3s are split: each image gets 0.6s.
+
+> Subsequent blocks on the same track are automatically shifted forward if the expanded array exceeds the original block's duration.
 
 ### Polling Job Status
 

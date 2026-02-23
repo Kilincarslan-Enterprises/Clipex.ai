@@ -74,6 +74,15 @@ export interface Block {
   subtitleEnabled?: boolean; // Enable automatic subtitles for this block
   subtitleSource?: string; // VTT content string, URL to .vtt
   subtitleStyleId?: string; // ID of a text block to copy style from (fontSize, color, bg)
+  // Dynamic Array (allows a single block to expand into N sequential blocks via API)
+  isDynamicArray?: boolean;
+  dynamicArrayConfig?: DynamicArrayConfig;
+}
+
+export interface DynamicArrayConfig {
+  // 'fixed_per_item': Each cloned block keeps the original duration. Total = N * duration.
+  // 'divide_total': The original duration is divided among N clones. Each = duration / N.
+  durationMode: 'fixed_per_item' | 'divide_total';
 }
 
 export interface SubtitleCue {
